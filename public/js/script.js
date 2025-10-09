@@ -96,27 +96,13 @@
         { id:'matic-network', sym:'MATIC' },
         { id:'litecoin', sym:'LTC' }
       ];
-      // Dans loadPrices() -- après avoir créé les blocs price-item pour chaque coin
-// Remplacer l'appel immédiat drawSparkline(...) par une stratégie lazy
-
-const topToDraw = 4; // nombre de sparklines réelles à générer au chargement
-
-for(let i=0;i<coins.length;i++){
-  const c = coins[i];
-  // ... (création du div comme avant)
-  // only draw for first `topToDraw`
-  if(i < topToDraw){
-    drawSparkline(`#sp-${c.sym}`, c.id).catch(()=>{});
-  } else {
-    // lazy: when user clicks the price item, draw sparkline
-    (function(selector, coinId){
-      document.querySelector(selector).addEventListener('click', ()=>{
-        drawSparkline(selector, coinId);
-      }, { once:true });
-    })(`#sp-${c.sym}`, c.id);
-  }
-}
-
+      for(const c of coins){
+        const v = (data[c.id] && data[c.id].usd) ? data[c.id].usd : 'N/A';
+        const div = document.createElement('div'); div.className='price-item';
+        div.innerHTML = `<div class="left"><div class="coin-icon">${c.sym[0]}</div><div><div class="name">${c.sym}</div><div class="small">${c.id}</div></div></div><div style="display:flex;flex-direction:column;align-items:flex-end"><div class="value">$${formatNumber(v)}</div><div class="sparkline" id="sp-${c.sym}"></div></div>`;
+        el.appendChild(div);
+        drawSparkline(`#sp-${c.sym}`, c.id).catch(()=>{});
+      }
     } catch(e){ console.error(e); }
   }
 
