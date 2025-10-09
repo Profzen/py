@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PY Crypto — Accueil</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="container">
+    <section class="hero">
+      <div class="hero-card">
+        <h1>PY Crypto — Échangez simplement</h1>
+        <p>Consultez les cours en temps réel, effectuez des échanges crypto ↔ fiat et suivez l'actualité.</p>
+
+        <div class="cta">
+          <a class="btn" href="/exchange">Faire un échange</a>
+          <a class="btn ghost" href="/news">Voir les news</a>
+          <a class="btn ghost" href="/login">Se connecter</a>
+        </div>
+
+        <div class="section" style="margin-top:20px">
+          <h3>Fonctionnalités clés</h3>
+          <div class="features-grid">
+            <div class="feature">
+              <h4>Échanges sûrs</h4>
+              <p class="small">Supporte crypto-crypto, crypto-fiat et fiat-fiat.</p>
+            </div>
+            <div class="feature">
+              <h4>Administration complète</h4>
+              <p class="small">Gestion des news, des taux et des transactions.</p>
+            </div>
+            <div class="feature">
+              <h4>Données en temps réel</h4>
+              <p class="small">Cours et graphiques mis à jour automatiquement.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section" style="margin-top:20px">
+          <h3>Pourquoi PY Crypto</h3>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div class="feature" style="min-width:220px"><strong>Fiabilité</strong><p class="small">Infrastructure robuste et sécurisée.</p></div>
+            <div class="feature" style="min-width:220px"><strong>UX optimisée</strong><p class="small">Interface claire et responsive.</p></div>
+            <div class="feature" style="min-width:220px"><strong>Support</strong><p class="small">Support client réactif et documentation.</p></div>
+          </div>
+        </div>
+
+      </div>
+
+      <aside class="price-card">
+        <h3>Cours rapides</h3>
+        <div id="crypto-prices" class="price-list"></div>
+        <small class="small" style="display:block;margin-top:10px">Mise à jour automatique toutes les 30s</small>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <h4>PY Crypto</h4>
+        <p class="small">Plateforme d'échange sécurisée — suivez les cours, échangez et restez informé.</p>
+        <div style="margin-top:12px">
+          <small class="small">Contact: contact@example.com</small>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Liens rapides</h4>
+        <ul style="padding-left:16px;color:var(--muted)">
+          <li><a href="/">Accueil</a></li>
+          <li><a href="/exchange">Échange</a></li>
+          <li><a href="/news">News</a></li>
+          <li><a href="/historique">Historique</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Newsletter</h4>
+        <div class="newsletter">
+          <input placeholder="Votre email"><button class="btn">S'abonner</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bottom">© PY Crypto — construit avec soin • <a href="/apropos">À propos</a> • <a href="/contact">Contact</a></div>
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/script.js"></script>
+</body>
+</html>

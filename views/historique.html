@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historique — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main class="container">
+    <section class="hero-card">
+      <h2>Historique</h2>
+      <p class="small">Vos transactions (locales si invitées)</p>
+      <table class="table" id="tx-table"><thead><tr><th>Date</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th></tr></thead><tbody></tbody></table>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    async function loadHistory(){
+      const token = localStorage.getItem('token');
+      if(token){
+        const res = await fetch('/api/transactions?mine=1', { headers: { 'Authorization':'Bearer ' + token }});
+        const txs = await res.json();
+        renderTxs(txs);
+      } else {
+        const local = JSON.parse(localStorage.getItem('local_txs') || '[]');
+        renderTxs(local);
+      }
+    }
+    function renderTxs(txs){
+      const tbody = document.querySelector('#tx-table tbody');
+      if(!txs || txs.length === 0) { tbody.innerHTML = '<tr><td colspan="6">Aucune transaction</td></tr>'; return; }
+      tbody.innerHTML = txs.map(t=>`<tr><td>${new Date(t.createdAt||t.createdAt).toLocaleString()}</td><td>${t.type}</td><td>${t.from}→${t.to}</td><td>${t.amountFrom}</td><td>${t.amountTo}</td><td>${t.status}</td></tr>`).join('');
+    }
+    loadHistory();
+    // socket update handled in script.js (it calls loadHistory when needed)
+  </script>
+
+  <script src="/js/script.js"></script>
+</body>
+</html>

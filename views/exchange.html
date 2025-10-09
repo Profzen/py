@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Échange — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main class="container">
+    <section class="hero-card">
+      <h2>Échange</h2>
+      <p class="small">Choisissez la paire, saisissez le montant, confirmez les détails.</p>
+
+      <div class="card-form">
+        <form id="exchange-form">
+          <div class="form-row">
+            <div class="col">
+              <label>De</label>
+              <select id="from"></select>
+            </div>
+            <div class="col">
+              <label>Vers</label>
+              <select id="to"></select>
+            </div>
+          </div>
+
+          <label>Montant</label>
+          <input type="number" id="amountFrom" placeholder="Montant" min="0" step="any">
+
+          <label>Montant estimé reçu</label>
+          <input type="text" id="amountTo" readonly>
+
+          <div style="display:flex;gap:12px;margin-top:12px">
+            <button class="btn" id="do-exchange" type="button">Soumettre</button>
+            <button type="button" class="btn ghost" id="refresh-rates">Rafraîchir taux</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // copy of exchange logic (designed to be self-contained)
+    async function loadRatesOptions(){
+      const r = await fetch('/api/rates'); const rates = await r.json();
+      const set = new Set(); rates.forEach(r=>{ const [a,b]=r.pair.split('-'); set.add(a); set.add(b); });
+      ['USD','BTC','ETH','USDT','USDC','SOL'].forEach(d=>set.add(d));
+      const arr = Array.from(set);
+      document.getElementById('from').innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
+      document.getElementById('to').innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
+    }
+    async function findRate(from,to){
+      const res = await fetch('/api/rates'); const rates = await res.json();
+      const pair = rates.find(r=>r.pair === `${from}-${to}`);
+      if(pair) return pair.rate;
+      const inv = rates.find(r=>r.pair === `${to}-${from}`);
+      if(inv) return 1 / inv.rate;
+      return 1;
+    }
+    const fromEl = document.getElementById('from'), toEl = document.getElementById('to'), amtEl = document.getElementById('amountFrom'), outEl = document.getElementById('amountTo');
+    async function calculate(){ const f=fromEl.value, t=toEl.value, amt=parseFloat(amtEl.value||0); if(!amt){ outEl.value='';return; } const rate = await findRate(f,t); outEl.value = (amt * rate).toFixed(6); }
+    fromEl?.addEventListener('change', calculate); toEl?.addEventListener('change', calculate); amtEl?.addEventListener('input', calculate);
+    document.getElementById('refresh-rates').addEventListener('click', async ()=>{ await loadRatesOptions(); alert('Taux rafraîchis'); });
+    document.getElementById('do-exchange').addEventListener('click', async ()=>{
+      const from = fromEl.value, to = toEl.value, amt = parseFloat(amtEl.value||0);
+      if(!amt || !from || !to){ alert('Veuillez remplir les champs'); return; }
+      const type = determineType(from,to);
+      openTransactionModal({ from, to, amountFrom: amt, type });
+    });
+
+    function determineType(from,to){
+      const fiat = ['USD','EUR','XOF','FCFA','GHS'];
+      const isFromFiat = fiat.includes(from.toUpperCase());
+      const isToFiat = fiat.includes(to.toUpperCase());
+      if(!isFromFiat && !isToFiat) return 'crypto-crypto';
+      if(!isFromFiat && isToFiat) return 'crypto-fiat';
+      if(isFromFiat && !isToFiat) return 'fiat-crypto';
+      return 'fiat-fiat';
+    }
+
+    function openTransactionModal(base){
+      const modal = document.createElement('div'); modal.className='modal';
+      const box = document.createElement('div'); box.className='box';
+      box.innerHTML = `<h3>Confirmer la transaction</h3><p class="small">Type: ${base.type}</p><div id="tx-fields"></div><div style="display:flex;gap:8px;margin-top:12px"><button id="tx-confirm" class="btn">Confirmer</button><button id="tx-cancel" class="btn ghost">Annuler</button></div>`;
+      modal.appendChild(box); document.body.appendChild(modal);
+      document.getElementById('tx-cancel').onclick = ()=> modal.remove();
+      const fields = box.querySelector('#tx-fields');
+      fields.innerHTML = `<label>Prénom</label><input id="tx-first"><label>Nom</label><input id="tx-last"><label>Téléphone</label><input id="tx-phone">`;
+      if(base.type === 'crypto-fiat' || base.type === 'fiat-fiat' || base.type === 'fiat-crypto'){
+        fields.innerHTML += `<label>Méthode</label><select id="tx-method"><option>mobile_money</option><option>bank</option></select><label>Compte / destination</label><input id="tx-dest">`;
+      } else if(base.type === 'crypto-crypto'){
+        fields.innerHTML += `<label>Adresse crypto destinataire</label><input id="tx-dest">`;
+      }
+      box.querySelector('#tx-confirm').onclick = async ()=>{
+        const details = { first: document.getElementById('tx-first').value, last: document.getElementById('tx-last').value, phone: document.getElementById('tx-phone').value, method: document.getElementById('tx-method')? document.getElementById('tx-method').value: null, dest: document.getElementById('tx-dest')?document.getElementById('tx-dest').value:null };
+        const rate = await findRate(base.from, base.to);
+        const amountTo = Number(base.amountFrom) * rate;
+        const payload = { ...base, amountTo, details };
+        const token = localStorage.getItem('token');
+        const headers = {'Content-Type':'application/json'}; if(token) headers['Authorization'] = 'Bearer ' + token;
+        const resp = await fetch('/api/transactions', { method:'POST', headers, body: JSON.stringify(payload) });
+        const data = await resp.json();
+        if(data.success){
+          const tx = data.transaction;
+          let local = JSON.parse(localStorage.getItem('local_txs') || '[]') || [];
+          local.push({ id: tx._id, ...tx });
+          localStorage.setItem('local_txs', JSON.stringify(local));
+          alert('Transaction enregistrée (pending).');
+          modal.remove();
+          location.href='/historique';
+        } else alert(data.message || 'Erreur');
+      };
+    }
+
+    loadRatesOptions();
+  </script>
+
+  <script src="/js/script.js"></script>
+</body>
+</html>

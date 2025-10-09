@@ -1,0 +1,37 @@
+<!-- public/partials/header.html -->
+<header class="site-header" role="banner">
+  <div class="header-inner">
+    <div class="left">
+      <div class="logo">PY Crypto</div>
+
+      <!-- Desktop nav -->
+      <nav class="nav-pc" role="navigation" aria-label="Main navigation">
+        <a href="/" class="nav-link"><svg class="icon" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M3 11.5L12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Accueil</span></a>
+        <a href="/exchange" class="nav-link"><svg class="icon" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M21 11h-6V9l-4 4 4 4v-2h6zM3 13h6v2l4-4-4-4v2H3z"/></svg><span>Échange</span></a>
+        <a href="/news" class="nav-link"><svg class="icon" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16V4zm-2 10H6v-2h12v2zM6 8h12V6H6v2z"/></svg><span>News</span></a>
+        <a href="/historique" class="nav-link"><svg class="icon" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M13 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7V3z"/><path fill="currentColor" d="M12 7h1v6l5.25 3.15-.75 1.23L12 15V7z"/></svg><span>Historique</span></a>
+        <a href="/apropos" class="nav-link"><svg class="icon" width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="8" r="2"/><path d="M11 11h2v6h-2z"/></svg><span>À propos</span></a>
+        <a href="/contact" class="nav-link"><svg class="icon" width="18" height="18" viewBox="0 0 24 24"><path d="M21 8V7l-3 2-2-1-7 4 9 5 6-4V8z"/></svg><span>Contact</span></a>
+      </nav>
+    </div>
+
+    <div class="header-actions">
+      <a class="btn ghost login-btn" href="/login"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v10zM5 19h2V5H5v14z"/></svg> Se connecter</a>
+    </div>
+  </div>
+
+  <!-- Mobile top bar: Historique / À propos / Contact / Connexion -->
+  <div class="mobile-top-bar">
+    <a href="/historique" class="mobile-top-item"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M13 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7V3z"/><path d="M12 7h1v6l5.25 3.15-.75 1.23L12 15V7z"/></svg><span>Historique</span></a>
+    <a href="/apropos" class="mobile-top-item"><svg width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="8" r="2"/><path d="M11 11h2v6h-2z"/></svg><span>À propos</span></a>
+    <a href="/contact" class="mobile-top-item"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M21 8V7l-3 2-2-1-7 4 9 5 6-4V8z"/></svg><span>Contact</span></a>
+    <a href="/login" class="mobile-top-item"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v10zM5 19h2V5H5v14z"/></svg><span>Se connecter</span></a>
+  </div>
+
+  <!-- Mobile bottom bar: Accueil / Échange / News (fixed bottom) -->
+  <nav class="nav-mobile" role="navigation" aria-label="Mobile bottom navigation">
+    <a class="icon-btn" href="/"><svg class="ic" width="22" height="22" viewBox="0 0 24 24"><path d="M3 11.5L12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="label">Accueil</span></a>
+    <a class="icon-btn" href="/exchange"><svg class="ic" width="22" height="22" viewBox="0 0 24 24"><path d="M21 11h-6V9l-4 4 4 4v-2h6zM3 13h6v2l4-4-4-4v2H3z"/></svg><span class="label">Échange</span></a>
+    <a class="icon-btn" href="/news"><svg class="ic" width="22" height="22" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16V4zm-2 10H6v-2h12v2zM6 8h12V6H6v2z"/></svg><span class="label">News</span></a>
+  </nav>
+</header>

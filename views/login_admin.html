@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<body class="no-header">
+  <div style="max-width:480px;margin:40px auto;">
+    <div class="hero-card">
+      <h2>Administration</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button id="tab-admin-login" class="btn ghost">Se connecter</button>
+        <button id="tab-admin-register" class="btn">Créer Admin</button>
+      </div>
+
+      <form id="admin-login-form">
+        <label>Email</label><input id="admin-login-email" type="email" required>
+        <label>Mot de passe</label><input id="admin-login-password" type="password" required>
+        <div style="margin-top:12px"><button class="btn" type="submit">Se connecter</button></div>
+      </form>
+
+      <form id="admin-register-form" style="display:none;margin-top:12px;">
+        <label>Nom d'utilisateur</label><input id="admin-reg-username" type="text" required>
+        <label>Email</label><input id="admin-reg-email" type="email" required>
+        <label>Mot de passe</label><input id="admin-reg-password" type="password" required>
+        <label>Confirmer</label><input id="admin-reg-password2" type="password" required>
+        <div style="margin-top:12px"><button class="btn" type="submit">Créer Admin</button></div>
+      </form>
+
+      <div id="admin-auth-msg" style="margin-top:12px;color:var(--muted)"></div>
+    </div>
+  </div>
+
+  <script>
+    const l = document.getElementById('tab-admin-login'), r = document.getElementById('tab-admin-register'), lf = document.getElementById('admin-login-form'), rf = document.getElementById('admin-register-form');
+    l.onclick = ()=>{ lf.style.display='block'; rf.style.display='none'; l.classList.add('btn'); r.classList.remove('btn'); };
+    r.onclick = ()=>{ lf.style.display='none'; rf.style.display='block'; r.classList.add('btn'); l.classList.remove('btn'); };
+
+    lf.addEventListener('submit', async e=> {
+      e.preventDefault();
+      const email = document.getElementById('admin-login-email').value, password = document.getElementById('admin-login-password').value;
+      const res = await fetch('/auth/admin/login',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password })});
+      const data = await res.json();
+      if(data.success){ localStorage.setItem('token', data.token); localStorage.setItem('username', data.username || ''); location.href='/admin'; } else { document.getElementById('admin-auth-msg').innerText = data.message || 'Erreur'; }
+    });
+
+    rf.addEventListener('submit', async e=> {
+      e.preventDefault();
+      const username = document.getElementById('admin-reg-username').value, email = document.getElementById('admin-reg-email').value, p = document.getElementById('admin-reg-password').value, p2 = document.getElementById('admin-reg-password2').value;
+      if(p !== p2){ document.getElementById('admin-auth-msg').innerText = 'Les mots de passe ne correspondent pas.'; return; }
+      const res = await fetch('/auth/admin/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password: p })});
+      const data = await res.json();
+      if(data.success){ document.getElementById('admin-auth-msg').innerText = 'Admin créé. Connectez-vous.'; l.click(); } else { document.getElementById('admin-auth-msg').innerText = data.message || 'Erreur'; }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>News — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main class="container">
+    <section class="hero-card">
+      <h2>Actualités</h2>
+      <p class="small">Cliquez pour lire l'article complet.</p>
+      <div id="news-grid" class="news-grid" style="margin-top:14px"></div>
+      <div id="news-empty" style="margin-top:14px"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    async function loadNews(){
+      const r = await fetch('/api/news'); const data = await r.json();
+      const grid = document.getElementById('news-grid');
+      if(!data || data.length===0){ document.getElementById('news-empty').innerHTML='<div class="card-form">Aucune news.</div>'; return; }
+      grid.innerHTML = data.map(n=>`<article class="news-card">${n.image?`<img src="${n.image}" alt="${n.title}">`:''}<h3>${n.title}</h3><p class="small">${n.description||''}</p><div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><small class="small">${new Date(n.date).toLocaleDateString()}</small><div><button class="btn ghost" onclick='openNews(${JSON.stringify(escapeForInline(n))})'>Lire</button></div></div></article>`).join('');
+    }
+    function escapeForInline(obj){ return { title:(obj.title||'').replace(/`/g,''), description:(obj.description||'').replace(/`/g,''), content:(obj.content||'').replace(/`/g,''), image: obj.image||'' }; }
+    function openNews(n){ window.openNewsModal(n); }
+    loadNews();
+  </script>
+
+  <script src="/js/script.js"></script>
+</body>
+</html>

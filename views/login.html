@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connexion — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<body class="no-header">
+  <div style="max-width:420px;margin:40px auto;">
+    <div class="hero-card">
+      <h2>Connexion utilisateur</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button id="tab-login" class="btn ghost">Se connecter</button>
+        <button id="tab-register" class="btn">Créer un compte</button>
+      </div>
+
+      <form id="login-form">
+        <label>Email</label><input id="login-email" type="email" required>
+        <label>Mot de passe</label><input id="login-password" type="password" required>
+        <div style="margin-top:12px"><button class="btn" type="submit">Se connecter</button></div>
+      </form>
+
+      <form id="register-form" style="display:none;margin-top:12px;">
+        <label>Nom d'utilisateur</label><input id="reg-username" type="text" required>
+        <label>Email</label><input id="reg-email" type="email" required>
+        <label>Mot de passe</label><input id="reg-password" type="password" required>
+        <label>Confirmer le mot de passe</label><input id="reg-password2" type="password" required>
+        <div style="margin-top:12px"><button class="btn" type="submit">Créer un compte</button></div>
+      </form>
+
+      <div id="auth-msg" style="margin-top:12px;color:var(--muted)"></div>
+    </div>
+  </div>
+
+  <script>
+    const tabLogin = document.getElementById('tab-login'), tabRegister = document.getElementById('tab-register'), loginForm = document.getElementById('login-form'), regForm = document.getElementById('register-form');
+    tabLogin.onclick = ()=>{ loginForm.style.display='block'; regForm.style.display='none'; tabLogin.classList.add('btn'); tabRegister.classList.remove('btn'); };
+    tabRegister.onclick = ()=>{ loginForm.style.display='none'; regForm.style.display='block'; tabRegister.classList.add('btn'); tabLogin.classList.remove('btn'); };
+
+    loginForm.addEventListener('submit', async e=> {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value, password = document.getElementById('login-password').value;
+      const res = await fetch('/auth/login',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password })});
+      const data = await res.json();
+      if(data.success){ localStorage.setItem('token', data.token); localStorage.setItem('username', data.username || ''); if(data.role === 'admin') location.href='/admin'; else location.href='/'; } else { document.getElementById('auth-msg').innerText = data.message || 'Erreur'; }
+    });
+
+    regForm.addEventListener('submit', async e=> {
+      e.preventDefault();
+      const u = document.getElementById('reg-username').value, email = document.getElementById('reg-email').value, p = document.getElementById('reg-password').value, p2 = document.getElementById('reg-password2').value;
+      if(p !== p2){ document.getElementById('auth-msg').innerText='Les mots de passe ne correspondent pas.'; return; }
+      const res = await fetch('/auth/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: u, email, password: p })});
+      const data = await res.json();
+      if(data.success){ document.getElementById('auth-msg').innerText = 'Inscription réussie — connectez-vous.'; tabLogin.click(); } else document.getElementById('auth-msg').innerText = data.message || 'Erreur';
+    });
+  </script>
+</body>
+</html>

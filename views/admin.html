@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main class="container" style="padding-top:18px">
+    <section class="hero-card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2>Admin Dashboard</h2>
+        <div><button id="logout-admin" class="btn ghost">Se déconnecter</button></div>
+      </div>
+      <p class="small">Gérez news, taux et transactions ici.</p>
+
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px">
+        <div style="flex:1;min-width:360px">
+          <h3>Éditeur de news</h3>
+          <form id="news-editor" class="card-form">
+            <label>Titre</label><input id="n-title" required>
+            <label>Lien</label><input id="n-link">
+            <label>Image (URL)</label><input id="n-image">
+            <label>Ou téléverser</label><input id="n-file" type="file" accept="image/*">
+            <img id="n-preview" class="img-preview" style="display:none">
+            <label>Description courte</label><textarea id="n-desc" rows="3"></textarea>
+            <label>Contenu complet</label><textarea id="n-content" rows="6"></textarea>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn" type="submit">Publier</button>
+              <button type="button" class="btn ghost" id="clear-news">Effacer</button>
+            </div>
+          </form>
+        </div>
+
+        <div style="flex:1;min-width:360px">
+          <h3>Taux / devises</h3>
+          <form id="rate-form" class="card-form">
+            <label>Pair (ex : BTC-USD)</label><input id="r-pair" required>
+            <label>Valeur</label><input id="r-value" type="number" step="any" required>
+            <div style="margin-top:10px"><button class="btn">Ajouter / Modifier</button></div>
+          </form>
+          <div id="rate-list" style="margin-top:12px" class="card-form"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:18px">
+        <h3>Transactions</h3>
+        <table class="table" id="admin-tx"><thead><tr><th>Date</th><th>User</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table>
+      </div>
+
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="footer-bottom">© PY Crypto — Admin</div></footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const token = localStorage.getItem('token');
+    if(!token){ alert('Admin: connexion requise'); location.href='/login_admin'; }
+    document.getElementById('logout-admin').onclick = ()=>{ localStorage.removeItem('token'); localStorage.removeItem('username'); location.href='/login_admin'; };
+
+    async function authFetch(url, opts = {}){
+      opts.headers = opts.headers || {};
+      opts.headers['Authorization'] = 'Bearer ' + token;
+      return fetch(url, opts);
+    }
+
+    document.getElementById('n-file').addEventListener('change', e=>{
+      const f = e.target.files[0];
+      if(!f) return;
+      const url = URL.createObjectURL(f);
+      const p = document.getElementById('n-preview'); p.src = url; p.style.display='block';
+    });
+
+    async function uploadFile(file){
+      const fd = new FormData(); fd.append('file', file);
+      const res = await fetch('/admin/upload', { method:'POST', headers:{ 'Authorization':'Bearer ' + token }, body: fd });
+      return await res.json();
+    }
+
+    document.getElementById('news-editor').addEventListener('submit', async e=>{
+      e.preventDefault();
+      let image = document.getElementById('n-image').value || '';
+      const fileInput = document.getElementById('n-file');
+      if(!image && fileInput.files && fileInput.files[0]){
+        const up = await uploadFile(fileInput.files[0]);
+        if(!up.success){ alert('Upload échoué'); return; }
+        image = up.url;
+      }
+      const body = { title: document.getElementById('n-title').value, link: document.getElementById('n-link').value, image, description: document.getElementById('n-desc').value, content: document.getElementById('n-content').value };
+      const res = await authFetch('/admin/news', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json(); alert(data.message || 'OK'); loadAdmin();
+    });
+
+    document.getElementById('rate-form').addEventListener('submit', async e=>{
+      e.preventDefault(); const pair = document.getElementById('r-pair').value; const rate = parseFloat(document.getElementById('r-value').value);
+      const res = await authFetch('/admin/rates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pair, rate })});
+      const data = await res.json(); alert(data.message || 'OK'); loadAdmin();
+    });
+
+    async function loadAdmin(){
+      const ratesRes = await fetch('/api/rates'); const rates = await ratesRes.json();
+      document.getElementById('rate-list').innerHTML = rates.map(r=>`<div style="padding:8px;border-bottom:1px solid var(--border)">${r.pair}: <strong>${r.rate}</strong></div>`).join('');
+      const txRes = await authFetch('/admin/transactions'); const txs = await txRes.json();
+      const tbody = document.querySelector('#admin-tx tbody');
+      tbody.innerHTML = (Array.isArray(txs) && txs.length) ? txs.map(t=>`<tr><td>${new Date(t.createdAt).toLocaleString()}</td><td>${t.user?.username||'Guest'}</td><td>${t.type}</td><td>${t.from}→${t.to}</td><td>${t.amountFrom}</td><td>${t.amountTo}</td><td>${t.status}</td><td><button class="btn ghost" onclick="viewTx('${t._id}')">Voir</button> <button class="btn" onclick="setStatus('${t._id}','approved')">Valider</button> <button class="btn ghost" onclick="setStatus('${t._id}','rejected')">Rejeter</button></td></tr>`).join('') : '<tr><td colspan="8">Aucune transaction</td></tr>';
+    }
+
+    window.viewTx = async function(id){
+      const res = await authFetch('/admin/transactions'); const txs = await res.json();
+      const tx = txs.find(t=>t._id === id);
+      if(!tx) return alert('Not found');
+      const content = `<div style="display:flex;gap:12px;flex-wrap:wrap"><div style="flex:1"><strong>Utilisateur:</strong> ${tx.user?.username||'Guest'}<br><strong>Type:</strong> ${tx.type}<br><strong>Pair:</strong> ${tx.from}→${tx.to}<br><strong>Montant:</strong> ${tx.amountFrom}<br><strong>Reçu:</strong> ${tx.amountTo}<br><strong>Status:</strong> ${tx.status}</div><div style="flex:1"><strong>Détails:</strong><pre style="white-space:pre-wrap">${JSON.stringify(tx.details, null, 2)}</pre></div></div>`;
+      window.openNewsModal({ title: `Transaction ${tx._id}`, content });
+    };
+
+    window.setStatus = async function(id, status){
+      if(!confirm(`Confirmer ${status} ?`)) return;
+      const res = await authFetch(`/admin/transactions/${id}/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status })});
+      const data = await res.json(); alert(data.message || 'OK'); loadAdmin();
+    };
+
+    // socket updates
+    const sock = io();
+    sock.on('newTransaction', ()=> loadAdmin());
+    sock.on('txStatusChanged', ()=> loadAdmin());
+
+    loadAdmin();
+  </script>
+
+  <script src="/js/script.js"></script>
+</body>
+</html>
