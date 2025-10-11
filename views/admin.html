@@ -1,129 +1,494 @@
 <!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
-<body>
-  <main class="container" style="padding-top:18px">
-    <section class="hero-card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h2>Admin Dashboard</h2>
-        <div><button id="logout-admin" class="btn ghost">Se déconnecter</button></div>
-      </div>
-      <p class="small">Gérez news, taux et transactions ici.</p>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin — PY Crypto</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* ===== Admin additions (kept in same theme) ===== */
+    :root{
+      --admin-card-bg: #ffffff;
+      --admin-accent: #0b76d1;
+      --muted-2: #6b7a83;
+    }
 
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px">
-        <div style="flex:1;min-width:360px">
-          <h3>Éditeur de news</h3>
-          <form id="news-editor" class="card-form">
-            <label>Titre</label><input id="n-title" required>
-            <label>Lien</label><input id="n-link">
-            <label>Image (URL)</label><input id="n-image">
-            <label>Ou téléverser</label><input id="n-file" type="file" accept="image/*">
+    .admin-container{max-width:1200px;margin:0 auto;padding:18px;}
+    .admin-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+    .admin-header .brand{font-weight:800;color:var(--admin-accent);font-size:20px}
+    .admin-header .meta{color:var(--muted-2);font-size:14px}
+
+    /* Transactions full width block */
+    .tx-block{background:var(--admin-card-bg);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow);margin-bottom:16px}
+    .tx-block .tx-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .tx-wrap{margin-top:12px}
+
+    /* Table style (desktop) */
+    .tx-table{width:100%;border-collapse:collapse}
+    .tx-table th,.tx-table td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:14px}
+    .tx-table thead th{background:transparent;color:var(--muted)}
+
+    /* Card view (mobile) */
+    .tx-cards{display:none;flex-direction:column;gap:12px}
+    .tx-card{background:linear-gradient(180deg,#fff,#fbfeff);padding:12px;border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 24px rgba(8,30,50,0.04)}
+    .tx-card .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+    .tx-card .muted{color:var(--muted)}
+
+    /* News editor & list */
+    .two-col{display:grid;grid-template-columns:1fr 380px;gap:18px}
+    .card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)}
+    .card h3{margin:0 0 8px}
+    .form-row{display:flex;gap:8px}
+    .form-row .col{flex:1}
+
+    .img-preview{max-width:100%;height:auto;border-radius:8px;margin-top:10px;object-fit:cover}
+
+    /* news list item */
+    .news-item{display:flex;gap:12px;align-items:center;padding:10px;border-radius:10px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
+    .news-thumb{width:92px;height:64px;border-radius:8px;object-fit:cover;background:var(--soft);flex-shrink:0}
+
+    /* Rates */
+    .rates-grid{display:flex;flex-direction:column;gap:8px}
+
+    /* helpers */
+    .tiny{font-size:13px;color:var(--muted)}
+    .actions{display:flex;gap:8px}
+
+    /* responsive */
+    @media (max-width:1100px){
+      .two-col{grid-template-columns:1fr}
+      .admin-header{flex-direction:column;align-items:flex-start;gap:8px}
+      .tx-table{display:none}
+      .tx-cards{display:flex}
+      .admin-header .meta{order:2}
+    }
+    @media (max-width:480px){
+      .news-thumb{width:72px;height:56px}
+      .tx-card .row{flex-direction:column;align-items:flex-start}
+    }
+  </style>
+</head>
+<body>
+  <main class="admin-container">
+    <!-- Header -->
+    <header class="admin-header">
+      <div>
+        <div class="brand">PY Crypto — Admin</div>
+        <div class="meta">Gérer news • taux • transactions</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="admin-username" class="tiny"></div>
+        <button id="btn-logout" class="btn ghost">Déconnexion</button>
+      </div>
+    </header>
+
+    <!-- Transactions full width -->
+    <section class="tx-block card" aria-labelledby="tx-title">
+      <div class="tx-head">
+        <h3 id="tx-title">Transactions récentes</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="tx-filter" placeholder="Rechercher utilisateur / statut / pair" style="padding:8px;border-radius:8px;border:1px solid var(--border)">
+          <button id="btn-refresh-tx" class="btn ghost">Rafraîchir</button>
+        </div>
+      </div>
+
+      <div class="tx-wrap">
+        <!-- Desktop table -->
+        <table class="tx-table" id="tx-table">
+          <thead>
+            <tr><th>Date</th><th>User</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="tx-tbody">
+            <tr><td colspan="8" class="tiny">Chargement...</td></tr>
+          </tbody>
+        </table>
+
+        <!-- Mobile cards -->
+        <div id="tx-cards" class="tx-cards"></div>
+      </div>
+    </section>
+
+    <!-- Two column area: Left (news editor + list) / Right (rates + quick actions) -->
+    <section class="two-col" style="margin-top:16px">
+      <!-- Left column -->
+      <div>
+        <div class="card">
+          <h3>Créer / Éditer une news</h3>
+          <form id="news-form">
+            <input type="hidden" id="n-id">
+            <label class="tiny">Titre *</label>
+            <input id="n-title" placeholder="Titre de la news" required style="padding:10px;border-radius:8px;border:1px solid var(--border)">
+
+            <label class="tiny" style="margin-top:8px">Téléverser une image</label>
+            <input id="n-file" type="file" accept="image/*" style="padding:6px">
+
             <img id="n-preview" class="img-preview" style="display:none">
-            <label>Description courte</label><textarea id="n-desc" rows="3"></textarea>
-            <label>Contenu complet</label><textarea id="n-content" rows="6"></textarea>
-            <div style="display:flex;gap:8px;margin-top:10px">
-              <button class="btn" type="submit">Publier</button>
-              <button type="button" class="btn ghost" id="clear-news">Effacer</button>
+
+            <label class="tiny" style="margin-top:8px">Description courte</label>
+            <textarea id="n-desc" rows="2" style="padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
+
+            <label class="tiny" style="margin-top:8px">Contenu complet</label>
+            <textarea id="n-content" rows="6" style="padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
+
+            <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+              <button id="publish-news" type="button" class="btn">Publier</button>
+              <button id="update-news" type="button" class="btn ghost" style="display:none">Mettre à jour</button>
+              <button id="clear-news" type="button" class="btn ghost">Effacer</button>
+              <div id="publish-status" class="tiny" style="margin-left:8px"></div>
             </div>
           </form>
         </div>
 
-        <div style="flex:1;min-width:360px">
-          <h3>Taux / devises</h3>
-          <form id="rate-form" class="card-form">
-            <label>Pair (ex : BTC-USD)</label><input id="r-pair" required>
-            <label>Valeur</label><input id="r-value" type="number" step="any" required>
-            <div style="margin-top:10px"><button class="btn">Ajouter / Modifier</button></div>
-          </form>
-          <div id="rate-list" style="margin-top:12px" class="card-form"></div>
+        <div class="card" style="margin-top:14px">
+          <h3>News publiées</h3>
+          <div id="news-list" style="display:flex;flex-direction:column;gap:10px;margin-top:10px"></div>
         </div>
       </div>
 
-      <div style="margin-top:18px">
-        <h3>Transactions</h3>
-        <table class="table" id="admin-tx"><thead><tr><th>Date</th><th>User</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table>
-      </div>
+      <!-- Right column -->
+      <aside>
+        <div class="card">
+          <h3>Taux & devises</h3>
+          <div id="rates-list" class="rates-grid tiny" style="margin-top:8px">Chargement...</div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <input id="r-pair" placeholder="Pair (ex: BTC-USD)" style="padding:8px;border-radius:8px;border:1px solid var(--border);flex:1">
+            <input id="r-value" type="number" placeholder="Valeur" style="padding:8px;border-radius:8px;border:1px solid var(--border);width:120px">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="r-add" class="btn">Ajouter / Modifier</button>
+            <button id="btn-refresh" class="btn ghost">Rafraîchir</button>
+          </div>
+        </div>
 
+        <div class="card" style="margin-top:12px">
+          <h4>Actions rapides</h4>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+            <button id="btn-load-news" class="btn ghost">Recharger news</button>
+            <button id="btn-seed-sample" class="btn ghost">Seed d'exemple</button>
+          </div>
+        </div>
+      </aside>
     </section>
+
+    <footer style="margin-top:18px" class="tiny muted">© PY Crypto — Admin</footer>
   </main>
 
-  <footer class="site-footer"><div class="footer-bottom">© PY Crypto — Admin</div></footer>
-
+  <!-- Socket client -->
   <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const token = localStorage.getItem('token');
-    if(!token){ alert('Admin: connexion requise'); location.href='/login_admin'; }
-    document.getElementById('logout-admin').onclick = ()=>{ localStorage.removeItem('token'); localStorage.removeItem('username'); location.href='/login_admin'; };
 
-    async function authFetch(url, opts = {}){
+  <script>
+  /* ===================
+     admin front JS (complete)
+     - token must be in localStorage 'token'
+     - endpoints:
+         POST /admin/upload (file form field 'file' - requires token)
+         POST /admin/news
+         DELETE /admin/news/:id
+         GET /admin/news
+         GET /admin/transactions
+         POST /admin/transactions/:id/status
+         GET /api/rates
+         POST /admin/rates
+     =================== */
+
+  (function(){
+    // helpers
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+    function toast(msg, ok=true){
+      const t = document.createElement('div');
+      t.style.position='fixed'; t.style.right='18px'; t.style.bottom='20px';
+      t.style.background = ok ? 'linear-gradient(90deg,#17a063,#15b36a)' : 'linear-gradient(90deg,#e14b4b,#d83a3a)';
+      t.style.color='#fff'; t.style.padding='10px 14px'; t.style.borderRadius='10px'; t.style.zIndex=99999;
+      t.innerText = msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000);
+    }
+    function authFetch(url, opts = {}) {
       opts.headers = opts.headers || {};
-      opts.headers['Authorization'] = 'Bearer ' + token;
+      const token = localStorage.getItem('token');
+      if (token) opts.headers['Authorization'] = 'Bearer ' + token;
       return fetch(url, opts);
     }
 
-    document.getElementById('n-file').addEventListener('change', e=>{
-      const f = e.target.files[0];
-      if(!f) return;
-      const url = URL.createObjectURL(f);
-      const p = document.getElementById('n-preview'); p.src = url; p.style.display='block';
-    });
+    // token check
+    const token = localStorage.getItem('token');
+    if(!token){ alert('Accès admin requis. Connecte-toi.'); window.location.href='/login_admin'; }
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    if(user && user.username) $('#admin-username').innerText = user.username;
 
-    async function uploadFile(file){
-      const fd = new FormData(); fd.append('file', file);
-      const res = await fetch('/admin/upload', { method:'POST', headers:{ 'Authorization':'Bearer ' + token }, body: fd });
-      return await res.json();
-    }
+    // socket
+    try {
+      const socket = io();
+      socket.on('connect', ()=> console.log('socket connected', socket.id));
+      socket.on('newTransaction', ()=> { loadTransactions(); toast('Nouvelle transaction'); });
+      socket.on('txStatusChanged', ()=> { loadTransactions(); toast('Statut transaction changé'); });
+    } catch(e){ console.warn('socket init failed', e); }
 
-    document.getElementById('news-editor').addEventListener('submit', async e=>{
-      e.preventDefault();
-      let image = document.getElementById('n-image').value || '';
-      const fileInput = document.getElementById('n-file');
-      if(!image && fileInput.files && fileInput.files[0]){
-        const up = await uploadFile(fileInput.files[0]);
-        if(!up.success){ alert('Upload échoué'); return; }
-        image = up.url;
+    // DOM refs
+    const txTbody = $('#tx-tbody'), txCards = $('#tx-cards'), txFilter = $('#tx-filter'), btnRefreshTx = $('#btn-refresh-tx');
+    const publishBtn = $('#publish-news'), updateBtn = $('#update-news'), clearBtn = $('#clear-news'), publishStatus = $('#publish-status');
+    const nFile = $('#n-file'), nPreview = $('#n-preview'), nTitle = $('#n-title'), nDesc = $('#n-desc'), nContent = $('#n-content'), nId = $('#n-id');
+    const newsList = $('#news-list'), btnLoadNews = $('#btn-load-news'), btnSeed = $('#btn-seed-sample');
+    const ratesList = $('#rates-list'), rPair = $('#r-pair'), rValue = $('#r-value'), rAdd = $('#r-add'), btnRefresh = $('#btn-refresh');
+
+    // Upload helper (POST /admin/upload)
+   // uploadFileToServer : renvoie { url, public_id } ou lance une erreur
+async function uploadFileToServer(file){
+  if(!file) return null;
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const token = localStorage.getItem('token');
+  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+  const res = await fetch('/admin/upload', { method: 'POST', headers, body: fd });
+  const text = await res.text();
+  // essayer parser JSON proprement
+  let json;
+  try { json = JSON.parse(text); } catch(e) {
+    // server returned non-json (html) -> throw with body snippet
+    throw new Error('Upload failed (non-JSON response): ' + (text || '(empty)'));
+  }
+
+  if(!res.ok || !json.success){
+    // json.error peut être objet ou string ; rendre lisible
+    const errText = (json.error && (typeof json.error === 'string' ? json.error : (json.error.message||JSON.stringify(json.error)))) || json.message || ('status ' + res.status);
+    throw new Error('Upload failed: ' + JSON.stringify({ success: json.success, message: json.message, error: errText }));
+  }
+
+  return { url: json.url, public_id: json.public_id || null };
+}
+
+
+
+    // Load transactions (admin)
+    async function loadTransactions(){
+      try {
+        const res = await authFetch('/admin/transactions');
+        if(!res.ok) throw new Error('Impossible de charger transactions');
+        const txs = await res.json();
+        renderTransactions(txs);
+      } catch(e){
+        console.error(e); txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Erreur chargement</td></tr>'; txCards.innerHTML = '';
       }
-      const body = { title: document.getElementById('n-title').value, link: document.getElementById('n-link').value, image, description: document.getElementById('n-desc').value, content: document.getElementById('n-content').value };
-      const res = await authFetch('/admin/news', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-      const data = await res.json(); alert(data.message || 'OK'); loadAdmin();
-    });
-
-    document.getElementById('rate-form').addEventListener('submit', async e=>{
-      e.preventDefault(); const pair = document.getElementById('r-pair').value; const rate = parseFloat(document.getElementById('r-value').value);
-      const res = await authFetch('/admin/rates', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pair, rate })});
-      const data = await res.json(); alert(data.message || 'OK'); loadAdmin();
-    });
-
-    async function loadAdmin(){
-      const ratesRes = await fetch('/api/rates'); const rates = await ratesRes.json();
-      document.getElementById('rate-list').innerHTML = rates.map(r=>`<div style="padding:8px;border-bottom:1px solid var(--border)">${r.pair}: <strong>${r.rate}</strong></div>`).join('');
-      const txRes = await authFetch('/admin/transactions'); const txs = await txRes.json();
-      const tbody = document.querySelector('#admin-tx tbody');
-      tbody.innerHTML = (Array.isArray(txs) && txs.length) ? txs.map(t=>`<tr><td>${new Date(t.createdAt).toLocaleString()}</td><td>${t.user?.username||'Guest'}</td><td>${t.type}</td><td>${t.from}→${t.to}</td><td>${t.amountFrom}</td><td>${t.amountTo}</td><td>${t.status}</td><td><button class="btn ghost" onclick="viewTx('${t._id}')">Voir</button> <button class="btn" onclick="setStatus('${t._id}','approved')">Valider</button> <button class="btn ghost" onclick="setStatus('${t._id}','rejected')">Rejeter</button></td></tr>`).join('') : '<tr><td colspan="8">Aucune transaction</td></tr>';
     }
 
+    // render transactions (table + cards)
+    function renderTransactions(txs){
+      // filter
+      const q = txFilter.value.trim().toLowerCase();
+      const filtered = txs.filter(t => {
+        if(!q) return true;
+        const u = (t.user && (t.user.username||t.user.email)) || 'guest';
+        return String(u).toLowerCase().includes(q) || String(t.status||'').toLowerCase().includes(q) || (t.from + ' ' + t.to).toLowerCase().includes(q);
+      });
+
+      // table (desktop)
+      if(filtered.length === 0){
+        txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Aucune transaction</td></tr>';
+      } else {
+        txTbody.innerHTML = filtered.map(t => {
+          const u = t.user ? (t.user.username || t.user.email) : 'Guest';
+          return `<tr>
+            <td>${new Date(t.createdAt).toLocaleString()}</td>
+            <td>${escapeHtml(u)}</td>
+            <td>${escapeHtml(t.type||'')}</td>
+            <td>${escapeHtml((t.from||'') + ' → ' + (t.to||''))}</td>
+            <td>${escapeHtml(String(t.amountFrom||''))}</td>
+            <td>${escapeHtml(String(t.amountTo||''))}</td>
+            <td>${escapeHtml(t.status||'')}</td>
+            <td>
+              <div class="actions">
+                <button class="btn ghost" onclick="viewTx('${t._id}')">Voir</button>
+                <button class="btn" onclick="setStatus('${t._id}','approved')">Valider</button>
+                <button class="btn ghost" onclick="setStatus('${t._id}','rejected')">Rejeter</button>
+              </div>
+            </td>
+          </tr>`; }).join('');
+      }
+
+      // cards (mobile)
+      txCards.innerHTML = filtered.map(t => {
+        const u = t.user ? (t.user.username || t.user.email) : 'Guest';
+        return `<div class="tx-card">
+          <div class="row"><strong>${escapeHtml(u)}</strong><span class="tiny muted">${new Date(t.createdAt).toLocaleString()}</span></div>
+          <div class="row"><span>Pair: <strong>${escapeHtml((t.from||'') + '→' + (t.to||''))}</strong></span><span>Status: <strong>${escapeHtml(t.status||'')}</strong></span></div>
+          <div class="row"><span>Montant: ${escapeHtml(String(t.amountFrom||''))}</span><span>Reçu: ${escapeHtml(String(t.amountTo||''))}</span></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn ghost" onclick="viewTx('${t._id}')">Voir</button>
+            <button class="btn" onclick="setStatus('${t._id}','approved')">Valider</button>
+            <button class="btn ghost" onclick="setStatus('${t._id}','rejected')">Rejeter</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // escape
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // transaction detail modal (admin)
     window.viewTx = async function(id){
-      const res = await authFetch('/admin/transactions'); const txs = await res.json();
-      const tx = txs.find(t=>t._id === id);
-      if(!tx) return alert('Not found');
-      const content = `<div style="display:flex;gap:12px;flex-wrap:wrap"><div style="flex:1"><strong>Utilisateur:</strong> ${tx.user?.username||'Guest'}<br><strong>Type:</strong> ${tx.type}<br><strong>Pair:</strong> ${tx.from}→${tx.to}<br><strong>Montant:</strong> ${tx.amountFrom}<br><strong>Reçu:</strong> ${tx.amountTo}<br><strong>Status:</strong> ${tx.status}</div><div style="flex:1"><strong>Détails:</strong><pre style="white-space:pre-wrap">${JSON.stringify(tx.details, null, 2)}</pre></div></div>`;
-      window.openNewsModal({ title: `Transaction ${tx._id}`, content });
+      try {
+        const res = await authFetch('/admin/transactions/' + id);
+        const tx = res.ok ? await res.json() : null;
+        const modal = document.createElement('div'); modal.className='modal';
+        const box = document.createElement('div'); box.className='box';
+        box.style.maxWidth='720px';
+        box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h3>Détails transaction</h3><button class="btn ghost" id="close-x">Fermer</button></div>
+          <pre style="white-space:pre-wrap;margin-top:8px">${tx ? JSON.stringify(tx,null,2) : 'Détails indisponibles'}</pre>`;
+        modal.appendChild(box); document.body.appendChild(modal);
+        box.querySelector('#close-x').onclick = ()=> modal.remove();
+        modal.onclick = (e)=> { if(e.target === modal) modal.remove(); };
+      } catch(e){ console.error(e); toast('Erreur chargement détail', false); }
     };
 
+    // setStatus (admin)
     window.setStatus = async function(id, status){
-      if(!confirm(`Confirmer ${status} ?`)) return;
-      const res = await authFetch(`/admin/transactions/${id}/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status })});
-      const data = await res.json(); alert(data.message || 'OK'); loadAdmin();
+      if(!confirm('Confirmer la mise à jour du statut ?')) return;
+      try {
+        const res = await authFetch(`/admin/transactions/${id}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status }) });
+        const body = await res.json();
+        if(res.ok && body.success){ toast('Statut mis à jour'); loadTransactions(); } else { toast('Erreur', false); console.error(body); }
+      } catch(e){ console.error(e); toast('Erreur', false); }
     };
 
-    // socket updates
-    const sock = io();
-    sock.on('newTransaction', ()=> loadAdmin());
-    sock.on('txStatusChanged', ()=> loadAdmin());
+    // NEWS logic
+    nFile.addEventListener('change', () => {
+      const f = nFile.files[0];
+      if(!f){ nPreview.style.display='none'; nPreview.src=''; return; }
+      nPreview.src = URL.createObjectURL(f); nPreview.style.display='block';
+      nPreview.onload = ()=> URL.revokeObjectURL(nPreview.src);
+    });
 
-    loadAdmin();
+    function clearNewsForm(){
+      nId.value=''; nTitle.value=''; nDesc.value=''; nContent.value='';
+      nFile.value=''; nPreview.style.display='none';
+      publishBtn.style.display='inline-block'; updateBtn.style.display='none';
+    }
+    clearBtn.addEventListener('click', clearNewsForm);
+
+    publishBtn.addEventListener('click', async () => {
+      const title = nTitle.value.trim(); if(!title){ alert('Titre requis'); return; }
+      publishBtn.disabled = true; publishStatus.innerText = 'Publication...';
+      try {
+        let imageUrl = '', publicId = '';
+        if(nFile.files && nFile.files[0]){
+          const up = await uploadFileToServer(nFile.files[0]);
+          imageUrl = up.url; publicId = up.public_id;
+        }
+        const body = { title, description: nDesc.value.trim(), content: nContent.value.trim(), image: imageUrl, image_public_id: publicId };
+        const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+        const j = await res.json();
+        if(res.ok && j.success){ toast('Publication réussie'); clearNewsForm(); loadNews(); } else { toast('Erreur publication', false); console.error(j); alert(j.message || 'Erreur'); }
+      } catch(err){ console.error(err); toast('Erreur upload/publication', false); alert(String(err)); }
+      finally{ publishBtn.disabled=false; publishStatus.innerText=''; }
+    });
+
+    // edit / update
+    window.editNews = function(id){
+      const found = window.__newsCache && window.__newsCache.find(n => n._id === id);
+      if(!found) return alert('News introuvable');
+      nId.value = found._id; nTitle.value = found.title || ''; nDesc.value = found.description || ''; nContent.value = found.content || '';
+      if(found.image){ nPreview.src = found.image; nPreview.style.display = 'block'; }
+      publishBtn.style.display='none'; updateBtn.style.display='inline-block';
+      window.scrollTo({ top: 140, behavior: 'smooth' });
+    };
+
+    updateBtn.addEventListener('click', async () => {
+      const id = nId.value; if(!id) return alert('Aucune news sélectionnée');
+      updateBtn.disabled = true; publishStatus.innerText = 'Mise à jour...';
+      try {
+        let imageUrl = '', publicId = '';
+        if(nFile.files && nFile.files[0]){ const up = await uploadFileToServer(nFile.files[0]); imageUrl = up.url; publicId = up.public_id; }
+        const body = { id, title: nTitle.value.trim(), description: nDesc.value.trim(), content: nContent.value.trim(), image: imageUrl, image_public_id: publicId };
+        const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+        const j = await res.json();
+        if(res.ok && j.success){ toast('Modification réussie'); clearNewsForm(); loadNews(); } else { toast('Erreur', false); console.error(j); alert(j.message || 'Erreur'); }
+      } catch(e){ console.error(e); toast('Erreur update', false); }
+      finally{ updateBtn.disabled=false; publishStatus.innerText=''; }
+    });
+
+    // delete news
+    window.deleteNews = async function(id){
+      if(!confirm('Supprimer cette news ?')) return;
+      try {
+        const res = await authFetch('/admin/news/' + id, { method:'DELETE' });
+        const j = await res.json();
+        if(res.ok && j.success){ toast('Suppression réussie'); loadNews(); } else { toast('Erreur suppression', false); console.error(j); alert(j.message || 'Erreur'); }
+      } catch(e){ console.error(e); toast('Erreur suppression', false); }
+    };
+
+    // load news
+    async function loadNews(){
+      try {
+        const res = await authFetch('/admin/news');
+        if(!res.ok) throw new Error('Impossible de charger news');
+        const news = await res.json();
+        window.__newsCache = news;
+        renderNewsList(news);
+      } catch(e){ console.error(e); newsList.innerHTML = '<div class="tiny muted">Erreur chargement news</div>'; }
+    }
+
+    function renderNewsList(news){
+      if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
+      newsList.innerHTML = news.map(n => `
+        <div class="news-item">
+          ${n.image ? `<img class="news-thumb" src="${n.image}" alt="">` : `<div class="news-thumb"></div>`}
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div><strong>${escapeHtml(n.title)}</strong><div class="tiny muted" style="margin-top:4px">${escapeHtml(n.description || '')}</div></div>
+              <div class="tiny muted">${new Date(n.date).toLocaleString()}</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn" onclick="editNews('${n._id}')">Modifier</button>
+            <button class="btn ghost" onclick="deleteNews('${n._id}')">Supprimer</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // rates logic
+    async function loadRates(){
+      try {
+        const res = await fetch('/api/rates');
+        const rates = await res.json();
+        if(!rates || !rates.length){ ratesList.innerHTML = '<div class="tiny muted">Aucun taux</div>'; return; }
+        ratesList.innerHTML = rates.map(r => `<div style="display:flex;justify-content:space-between"><div><strong>${r.pair}</strong><div class="tiny muted">${r.desc||''}</div></div><div><strong>${r.rate}</strong></div></div>`).join('');
+      } catch(e){ console.error(e); ratesList.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; }
+    }
+
+    rAdd.addEventListener('click', async () => {
+      const pair = rPair.value.trim(); const rate = parseFloat(rValue.value);
+      if(!pair || isNaN(rate)) return alert('Pair et valeur requis');
+      try {
+        const res = await authFetch('/admin/rates', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ pair, rate }) });
+        const j = await res.json();
+        if(res.ok && j.success){ toast('Taux ajouté/modifié'); rPair.value=''; rValue.value=''; loadRates(); } else { toast('Erreur rates', false); console.error(j); }
+      } catch(e){ console.error(e); toast('Erreur', false); }
+    });
+
+    // helpers bindings
+    txFilter.addEventListener('input', loadTransactions);
+    btnRefreshTx.addEventListener('click', loadTransactions);
+    btnLoadNews.addEventListener('click', loadNews);
+    btnSeed.addEventListener('click', async () => {
+      if(!confirm('Créer une news test ?')) return;
+      try {
+        const body = { title: 'News test ' + new Date().toLocaleTimeString(), description:'sample', content:'contenu sample' };
+        const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+        const j = await res.json();
+        if(res.ok && j.success){ toast('Seed OK'); loadNews(); } else { toast('Erreur seed', false); console.error(j); }
+      } catch(e){ console.error(e); toast('Erreur', false); }
+    });
+    btnRefresh.addEventListener('click', ()=> { loadNews(); loadRates(); });
+    $('#btn-logout').addEventListener('click', ()=> { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href='/login_admin'; });
+
+    // initial load
+    loadTransactions(); loadNews(); loadRates();
+
+    // Expose functions for inline buttons
+    window.editNews = editNews; window.deleteNews = deleteNews; window.viewTx = viewTx; window.setStatus = setStatus;
+  })();
   </script>
-
-  <script src="/js/script.js"></script>
 </body>
 </html>

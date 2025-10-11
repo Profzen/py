@@ -2,16 +2,21 @@
 const mongoose = require('mongoose');
 
 const txSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // null for guest
-  type: { type: String }, // crypto-crypto, crypto-fiat, fiat-crypto, fiat-fiat
-  from: { type: String },
-  to: { type: String },
-  amountFrom: { type: Number },
-  amountTo: { type: Number },
-  details: { type: Object }, // additional info entered in modal (name, phone, addresses...)
-  status: { type: String, enum: ['pending','approved','rejected'], default: 'pending' },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  type: { type: String, default: 'exchange' }, // crypto-crypto, crypto-fiat, fiat-crypto, fiat-fiat
+  from: { type: String, required: true }, // ex: 'BTC' or 'USD'
+  to: { type: String, required: true },
+  amountFrom: { type: Number, required: true },
+  amountTo: { type: Number, required: true },
+  details: { type: mongoose.Schema.Types.Mixed, default: {} }, // objet libre pour nom,phone,address...
+  status: { type: String, enum: ['pending','approved','rejected','cancelled'], default: 'pending' },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
+});
+
+txSchema.pre('save', function(next){
+  this.updatedAt = Date.now();
+  next();
 });
 
 module.exports = mongoose.models.Transaction || mongoose.model('Transaction', txSchema);

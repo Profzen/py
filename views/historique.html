@@ -1,39 +1,150 @@
 <!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Historique — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Historique — PY Crypto</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Historique page styling */
+    .hist-container{max-width:1100px;margin:0 auto;padding:18px}
+    .hist-hero{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+    .hist-hero .title{font-size:20px;font-weight:700;color:var(--text)}
+    .hist-card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)}
+    .filter-row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+    .filter-row input{padding:8px;border-radius:8px;border:1px solid var(--border);flex:1}
+
+    /* Desktop table */
+    .hist-table{width:100%;border-collapse:collapse}
+    .hist-table th,.hist-table td{padding:10px;border-bottom:1px solid var(--border);text-align:left}
+    .hist-table thead th{color:var(--muted)}
+
+    /* Mobile cards (no horizontal scroll) */
+    .hist-cards{display:none;flex-direction:column;gap:12px}
+    .hist-card-item{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
+    .hist-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+    @media (max-width:900px){
+      .hist-table{display:none}
+      .hist-cards{display:flex}
+    }
+  </style>
+</head>
 <body>
-  <main class="container">
-    <section class="hero-card">
-      <h2>Historique</h2>
-      <p class="small">Vos transactions (locales si invitées)</p>
-      <table class="table" id="tx-table"><thead><tr><th>Date</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th></tr></thead><tbody></tbody></table>
+  <main class="hist-container">
+    <header class="hist-hero">
+      <div>
+        <div class="title">Historique des transactions</div>
+        <div class="tiny muted">Vos échanges récents (local ou compte)</div>
+      </div>
+      <div>
+        <button id="btn-refresh" class="btn ghost">Rafraîchir</button>
+      </div>
+    </header>
+
+    <section class="hist-card">
+      <div class="filter-row">
+        <input id="search" placeholder="Rechercher par pair, statut, utilisateur...">
+        <select id="view-mode">
+          <option value="all">Toutes</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Validées</option>
+          <option value="rejected">Rejetées</option>
+        </select>
+      </div>
+
+      <!-- Desktop table -->
+      <div style="overflow:hidden">
+        <table class="hist-table" id="hist-table">
+          <thead><tr><th>Date</th><th>User</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th></tr></thead>
+          <tbody id="hist-tbody"><tr><td colspan="6" class="tiny">Chargement...</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Mobile cards -->
+      <div id="hist-cards" class="hist-cards" style="margin-top:8px"></div>
     </section>
+
+    <footer style="margin-top:18px" class="tiny muted">© PY Crypto</footer>
   </main>
 
-  <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
-
-  <script src="/socket.io/socket.io.js"></script>
   <script>
+  (function(){
+    const $ = q => document.querySelector(q);
+    const token = localStorage.getItem('token');
+    const searchInput = $('#search'), viewMode = $('#view-mode'), btnRefresh = $('#btn-refresh');
+
+    // fetch user transactions if logged, else from localStorage guestTx
     async function loadHistory(){
-      const token = localStorage.getItem('token');
-      if(token){
-        const res = await fetch('/api/transactions?mine=1', { headers: { 'Authorization':'Bearer ' + token }});
-        const txs = await res.json();
-        renderTxs(txs);
-      } else {
-        const local = JSON.parse(localStorage.getItem('local_txs') || '[]');
-        renderTxs(local);
+      try {
+        let txs = [];
+        if(token){
+          const res = await fetch('/api/transactions?mine=1', { headers: { 'Authorization': 'Bearer ' + token }});
+          if(!res.ok) throw new Error('Impossible de charger historique serveur');
+          txs = await res.json();
+        } else {
+          // guest
+          const raw = localStorage.getItem('guestTx') || '[]';
+          txs = JSON.parse(raw);
+        }
+        renderHistory(txs);
+      } catch(e){
+        console.error(e);
+        $('#hist-tbody').innerHTML = '<tr><td colspan="6" class="tiny">Erreur chargement</td></tr>';
+        $('#hist-cards').innerHTML = '';
       }
     }
-    function renderTxs(txs){
-      const tbody = document.querySelector('#tx-table tbody');
-      if(!txs || txs.length === 0) { tbody.innerHTML = '<tr><td colspan="6">Aucune transaction</td></tr>'; return; }
-      tbody.innerHTML = txs.map(t=>`<tr><td>${new Date(t.createdAt||t.createdAt).toLocaleString()}</td><td>${t.type}</td><td>${t.from}→${t.to}</td><td>${t.amountFrom}</td><td>${t.amountTo}</td><td>${t.status}</td></tr>`).join('');
-    }
-    loadHistory();
-    // socket update handled in script.js (it calls loadHistory when needed)
-  </script>
 
-  <script src="/js/script.js"></script>
+    function renderHistory(txs){
+      const q = searchInput.value.trim().toLowerCase();
+      const filter = viewMode.value;
+      const filtered = txs.filter(t => {
+        if(filter !== 'all' && (t.status || '').toLowerCase() !== filter) return false;
+        if(!q) return true;
+        const pair = ((t.from||'') + ' ' + (t.to||'')).toLowerCase();
+        const u = (t.user && (t.user.username||t.user.email)) || 'guest';
+        return pair.includes(q) || u.toLowerCase().includes(q) || (t.status||'').toLowerCase().includes(q);
+      });
+
+      // table
+      if(filtered.length === 0){
+        $('#hist-tbody').innerHTML = '<tr><td colspan="6" class="tiny">Aucune transaction</td></tr>';
+      } else {
+        $('#hist-tbody').innerHTML = filtered.map(t => {
+          const user = t.user ? (t.user.username || t.user.email) : (t.guestName || 'Guest');
+          return `<tr>
+            <td>${new Date(t.createdAt||t.date||Date.now()).toLocaleString()}</td>
+            <td>${escapeHtml(user)}</td>
+            <td>${escapeHtml((t.from||'') + ' → ' + (t.to||''))}</td>
+            <td>${escapeHtml(String(t.amountFrom||''))}</td>
+            <td>${escapeHtml(String(t.amountTo||''))}</td>
+            <td>${escapeHtml(t.status||'')}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // cards for mobile
+      $('#hist-cards').innerHTML = filtered.map(t => {
+        const user = t.user ? (t.user.username || t.user.email) : (t.guestName || 'Guest');
+        return `<div class="hist-card-item">
+          <div class="hist-row"><strong>${escapeHtml(user)}</strong><span class="tiny muted">${new Date(t.createdAt||t.date||Date.now()).toLocaleString()}</span></div>
+          <div class="hist-row"><span>Pair: <strong>${escapeHtml((t.from||'')+' → '+(t.to||''))}</strong></span><span>Status: <strong>${escapeHtml(t.status||'')}</strong></span></div>
+          <div class="hist-row"><span>Montant: ${escapeHtml(String(t.amountFrom||''))}</span><span>Reçu: ${escapeHtml(String(t.amountTo||''))}</span></div>
+        </div>`;
+      }).join('');
+    }
+
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // bindings
+    searchInput.addEventListener('input', loadHistory);
+    viewMode.addEventListener('change', loadHistory);
+    btnRefresh.addEventListener('click', loadHistory);
+
+    // initial
+    loadHistory();
+
+  })();
+  </script>
 </body>
 </html>

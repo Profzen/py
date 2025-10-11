@@ -1,54 +1,72 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
-<body class="no-header">
-  <div style="max-width:480px;margin:40px auto;">
-    <div class="hero-card">
-      <h2>Administration</h2>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button id="tab-admin-login" class="btn ghost">Se connecter</button>
-        <button id="tab-admin-register" class="btn">Créer Admin</button>
-      </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connexion Administrateur - PYXCHANGE</title>
+  <link rel="stylesheet" href="/css/admin_login.css">
+  <style>
+    body {
+      margin:0; padding:0;
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0b1526, #10233d);
+      color:#fff;
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .login-box {
+      width: 100%;
+      max-width: 400px;
+      background: rgba(255,255,255,0.05);
+      padding: 2rem;
+      border-radius: 16px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.3);
+      backdrop-filter: blur(8px);
+    }
+    h1 {
+      text-align:center;
+      margin-bottom: 1.5rem;
+      font-size: 1.5rem;
+      color:#00d084;
+    }
+    label { font-size:0.9rem; color:#ccc; display:block; margin-bottom:6px; }
+    input {
+      width:100%; padding:10px 12px; border:none;
+      border-radius:10px; margin-bottom:1rem;
+      background:#14273d; color:#fff;
+    }
+    input:focus { outline:2px solid #00d084; }
+    button {
+      width:100%; background:#00d084; border:none; color:#fff;
+      padding:12px; border-radius:10px; font-weight:bold; cursor:pointer;
+      transition:background 0.2s;
+    }
+    button:hover { background:#05b26d; }
+    .msg { text-align:center; margin-top:1rem; color:#ffb3b3; font-size:0.9rem; }
+    @media(max-width:480px){
+      .login-box { margin: 0 1rem; padding:1.5rem; }
+    }
+  </style>
+</head>
+<body>
 
-      <form id="admin-login-form">
-        <label>Email</label><input id="admin-login-email" type="email" required>
-        <label>Mot de passe</label><input id="admin-login-password" type="password" required>
-        <div style="margin-top:12px"><button class="btn" type="submit">Se connecter</button></div>
-      </form>
+  <div class="login-box">
+    <h1>Espace Admin</h1>
+    <form id="login-form">
+      <label for="email">Adresse email</label>
+      <input type="email" id="email" placeholder="admin@example.com" required>
 
-      <form id="admin-register-form" style="display:none;margin-top:12px;">
-        <label>Nom d'utilisateur</label><input id="admin-reg-username" type="text" required>
-        <label>Email</label><input id="admin-reg-email" type="email" required>
-        <label>Mot de passe</label><input id="admin-reg-password" type="password" required>
-        <label>Confirmer</label><input id="admin-reg-password2" type="password" required>
-        <div style="margin-top:12px"><button class="btn" type="submit">Créer Admin</button></div>
-      </form>
+      <label for="password">Mot de passe</label>
+      <input type="password" id="password" placeholder="••••••••" required>
 
-      <div id="admin-auth-msg" style="margin-top:12px;color:var(--muted)"></div>
-    </div>
+      <button type="submit">Se connecter</button>
+    </form>
+    <div id="msg" class="msg"></div>
   </div>
 
-  <script>
-    const l = document.getElementById('tab-admin-login'), r = document.getElementById('tab-admin-register'), lf = document.getElementById('admin-login-form'), rf = document.getElementById('admin-register-form');
-    l.onclick = ()=>{ lf.style.display='block'; rf.style.display='none'; l.classList.add('btn'); r.classList.remove('btn'); };
-    r.onclick = ()=>{ lf.style.display='none'; rf.style.display='block'; r.classList.add('btn'); l.classList.remove('btn'); };
+  <script src="/js/login_admin.js"></script>
 
-    lf.addEventListener('submit', async e=> {
-      e.preventDefault();
-      const email = document.getElementById('admin-login-email').value, password = document.getElementById('admin-login-password').value;
-      const res = await fetch('/auth/admin/login',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password })});
-      const data = await res.json();
-      if(data.success){ localStorage.setItem('token', data.token); localStorage.setItem('username', data.username || ''); location.href='/admin'; } else { document.getElementById('admin-auth-msg').innerText = data.message || 'Erreur'; }
-    });
-
-    rf.addEventListener('submit', async e=> {
-      e.preventDefault();
-      const username = document.getElementById('admin-reg-username').value, email = document.getElementById('admin-reg-email').value, p = document.getElementById('admin-reg-password').value, p2 = document.getElementById('admin-reg-password2').value;
-      if(p !== p2){ document.getElementById('admin-auth-msg').innerText = 'Les mots de passe ne correspondent pas.'; return; }
-      const res = await fetch('/auth/admin/register',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, email, password: p })});
-      const data = await res.json();
-      if(data.success){ document.getElementById('admin-auth-msg').innerText = 'Admin créé. Connectez-vous.'; l.click(); } else { document.getElementById('admin-auth-msg').innerText = data.message || 'Erreur'; }
-    });
-  </script>
 </body>
 </html>

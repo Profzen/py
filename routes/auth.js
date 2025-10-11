@@ -4,73 +4,68 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
+
 const JWT_SECRET = process.env.JWT_SECRET || 'secret123';
+const JWT_EXPIRES = process.env.JWT_EXPIRES || '7d';
 
-// Register user (client)
-router.post('/register', async (req,res) => {
+// Helper: create token + safe user object
+function makeAuthResult(user){
+  const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const safeUser = { _id: user._id, username: user.username, email: user.email, role: user.role, isAdmin: user.isAdmin };
+  return { token, user: safeUser };
+}
+
+// Register (alias /auth/register and /auth/signup)
+async function registerHandler(req, res){
   try {
-    const { username, email, password } = req.body;
-    if(!username || !email || !password) return res.json({ success:false, message:'Champs manquants' });
-    const exists = await User.findOne({ email });
-    if(exists) return res.json({ success:false, message:'Email déjà utilisé' });
-    const hashed = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, email, password: hashed, role: 'user' });
-    res.json({ success:true, message:'Utilisateur créé', user: { id: user._id, email: user.email } });
-  } catch(err) {
-    console.error(err);
-    res.status(500).json({ success:false, message:'Erreur serveur' });
+    const { username, email, password, role } = req.body || {};
+    if(!email || !password) return res.status(400).json({ success:false, message:'Email et mot de passe requis' });
+
+    // normalize email
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existing = await User.findOne({ email: normalizedEmail });
+    if(existing) return res.status(400).json({ success:false, message:'Email déjà utilisé' });
+
+    const hash = await bcrypt.hash(String(password), 10);
+    const user = new User({
+      username: username ? String(username).trim() : normalizedEmail.split('@')[0],
+      email: normalizedEmail,
+      password: hash,
+      role: role || 'user'
+    });
+    await user.save();
+
+    const auth = makeAuthResult(user);
+    return res.json({ success:true, message:'Compte créé', token: auth.token, user: auth.user });
+  } catch (err){
+    console.error('POST /auth/register err', err);
+    return res.status(500).json({ success:false, message:'Erreur serveur', error: String(err) });
   }
-});
+}
 
-// Login for client (user)
-router.post('/login', async (req,res) => {
-  try {
-    const { email, password } = req.body;
-    if(!email || !password) return res.json({ success:false, message:'Champs manquants' });
-    const user = await User.findOne({ email });
-    if(!user) return res.json({ success:false, message:'Utilisateur introuvable' });
-    const ok = await bcrypt.compare(password, user.password);
-    if(!ok) return res.json({ success:false, message:'Mot de passe incorrect' });
-    const token = jwt.sign({ id: user._id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
-    res.json({ success:true, token, role: user.role, username: user.username });
-  } catch(err){
-    console.error(err);
-    res.status(500).json({ success:false, message:'Erreur serveur' });
-  }
-});
+// POST /auth/register
+router.post('/auth/register', registerHandler);
+// POST /auth/signup (alias)
+router.post('/auth/signup', registerHandler);
 
-// Admin register/login: create admin only if none exists
-router.post('/admin/register', async (req,res) => {
+// Login
+router.post('/auth/login', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
-    if(!username || !email || !password) return res.json({ success:false, message:'Champs manquants' });
-    const adminCount = await User.countDocuments({ role:'admin' });
-    if(adminCount > 0) return res.json({ success:false, message:'Un admin existe déjà' });
-    const exists = await User.findOne({ email });
-    if(exists) return res.json({ success:false, message:'Email déjà utilisé' });
-    const hashed = await bcrypt.hash(password, 10);
-    const admin = await User.create({ username, email, password: hashed, role: 'admin' });
-    res.json({ success:true, message:'Admin créé', admin: { id: admin._id, email: admin.email } });
-  } catch(err){
-    console.error(err);
-    res.status(500).json({ success:false, message:'Erreur serveur' });
-  }
-});
+    const { email, password } = req.body || {};
+    if(!email || !password) return res.status(400).json({ success:false, message:'Email et mot de passe requis' });
 
-// Admin login
-router.post('/admin/login', async (req,res) => {
-  try {
-    const { email, password } = req.body;
-    if(!email || !password) return res.json({ success:false, message:'Champs manquants' });
-    const user = await User.findOne({ email });
-    if(!user || user.role !== 'admin') return res.json({ success:false, message:'Admin introuvable' });
-    const ok = await bcrypt.compare(password, user.password);
-    if(!ok) return res.json({ success:false, message:'Mot de passe incorrect' });
-    const token = jwt.sign({ id: user._id, role: user.role, username: user.username }, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' });
-    res.json({ success:true, token, role: user.role, username: user.username });
-  } catch(err){
-    console.error(err);
-    res.status(500).json({ success:false, message:'Erreur serveur' });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+    if(!user) return res.status(400).json({ success:false, message:'Utilisateur introuvable' });
+
+    const ok = await bcrypt.compare(String(password), user.password);
+    if(!ok) return res.status(401).json({ success:false, message:'Mot de passe incorrect' });
+
+    const auth = makeAuthResult(user);
+    return res.json({ success:true, token: auth.token, user: auth.user });
+  } catch (err){
+    console.error('POST /auth/login err', err);
+    return res.status(500).json({ success:false, message:'Erreur serveur', error: String(err) });
   }
 });
 

@@ -135,3 +135,9 @@ label{font-weight:700;color:var(--text);display:block;margin-top:12px}
 .btn{transition:all .18s ease}
 .btn:hover{transform:translateY(-2px);box-shadow:0 18px 40px rgba(11,118,209,0.08)}
 .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--accent)}
+
+/* responsive table wrapper (historique page) */
+.tx-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+@media (max-width:720px){
+  .tx-wrap table { min-width:900px; } /* force scroll horizontal si nécessaire */
+}
