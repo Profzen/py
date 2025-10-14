@@ -1,7 +1,6 @@
 // routes/api.js
-// Routes publiques et API (prices, market_chart, news, transactions, rates)
-// Remplace entièrement ton ancien routes/api.js par celui-ci.
-// Dépendances : axios, jsonwebtoken, mongoose models existants (News, Rate, Transaction, User)
+// Routes publiques et API (prices, market_chart, news, transactions, rates, payments)
+// Dépendances : axios, jsonwebtoken, mongoose models existants (News, Rate, Transaction, User, PaymentMethod)
 
 const express = require('express');
 const router = express.Router();
@@ -12,6 +11,7 @@ const News = require('../models/News');
 const Rate = require('../models/Rate');
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
+const PaymentMethod = require('../models/PaymentMethod'); // NEW
 
 const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3';
 
@@ -83,6 +83,31 @@ router.get('/rates', async (req, res) => {
   } catch (err) {
     console.error('GET /api/rates err', err);
     res.status(500).json({ error: 'Impossible de récupérer rates' });
+  }
+});
+
+// --- payments (public) ---
+// GET /api/payments
+// optional query: ?active=1&type=crypto|fiat&network=BEP20
+router.get('/payments', async (req, res) => {
+  try {
+    const q = {};
+    if (typeof req.query.active !== 'undefined') {
+      // treat active=1 or active=true as truthy
+      const a = String(req.query.active).toLowerCase();
+      q.active = (a === '1' || a === 'true');
+    }
+    if (req.query.type && ['crypto','fiat'].includes(req.query.type)) q.type = req.query.type;
+    if (req.query.network) q.network = String(req.query.network).trim();
+
+    // if no filters provided, default to active only (conservative)
+    const finalQuery = Object.keys(q).length ? q : { active: true };
+
+    const methods = await PaymentMethod.find(finalQuery).sort({ type: 1, name: 1 });
+    res.json(methods);
+  } catch (err) {
+    console.error('GET /api/payments err', err);
+    res.status(500).json({ error: 'Impossible de récupérer les moyens de paiement' });
   }
 });
 

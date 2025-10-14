@@ -1,6 +1,52 @@
 <!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Échange — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Échange — PY Crypto</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Layout container */
+    .container{max-width:980px;margin:18px auto;padding:0 12px;box-sizing:border-box}
+    .hero-card{background:var(--card);padding:18px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)}
+    .card-form{margin-top:12px}
+    .form-row{display:flex;gap:12px}
+    .col{flex:1;min-width:0}
+    label{display:block;margin-bottom:6px;font-weight:600}
+    input[type="number"], input[type="text"], input[type="email"], select, textarea {
+      width:100%; padding:10px;border-radius:8px;border:1px solid var(--border);box-sizing:border-box;
+    }
+    .small{color:var(--muted);font-size:13px}
+    .btn { padding:10px 14px;border-radius:10px;border:0;background:linear-gradient(90deg,#0b76d1,#1fa9ff);color:#fff; cursor:pointer; }
+    .btn.ghost { background:transparent;border:1px solid var(--border); color:var(--muted) }
+    @media (max-width:640px){
+      .form-row{flex-direction:column}
+    }
+
+    /* Modal */
+    .modal{position:fixed;inset:0;background:rgba(8,20,34,0.5);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
+    .modal .box{background:#fff;border-radius:12px;padding:16px;max-width:720px;width:100%;box-shadow:0 20px 50px rgba(2,12,27,0.3);display:flex;flex-direction:column;max-height:85vh;overflow:auto}
+    .modal .box h3{margin:0 0 8px}
+    .modal .box .small{margin-bottom:8px}
+    .modal .box form{display:flex;flex-direction:column;gap:8px}
+    .modal .box form .row{display:flex;gap:8px}
+    .modal .box input, .modal .box select, .modal .box textarea { margin:0 }
+    .network-address{background:#f7fbff;border:1px dashed #cfe9ff;padding:10px;border-radius:8px;font-size:14px;margin-bottom:8px}
+    .muted{color:var(--muted);font-size:13px}
+    .tx-instruction{font-weight:700;margin-bottom:6px}
+    .tx-note{font-size:13px;color:#555;margin-bottom:8px}
+
+    /* ensure page responsive (smaller devices) */
+    @media (max-width:420px){
+      .modal .box{padding:12px}
+      .btn{padding:8px 10px}
+    }
+
+    /* small helpers */
+    .stack{display:flex;flex-direction:column;gap:8px}
+    .h-scroll { overflow-x:auto }
+  </style>
+</head>
 <body>
   <main class="container">
     <section class="hero-card">
@@ -8,27 +54,32 @@
       <p class="small">Choisissez la paire, saisissez le montant, confirmez les détails.</p>
 
       <div class="card-form">
-        <form id="exchange-form">
+        <form id="exchange-form" class="stack">
           <div class="form-row">
             <div class="col">
-              <label>De</label>
-              <select id="from"></select>
+              <label for="from">De</label>
+              <select id="from" aria-label="De"></select>
             </div>
             <div class="col">
-              <label>Vers</label>
-              <select id="to"></select>
+              <label for="to">Vers</label>
+              <select id="to" aria-label="Vers"></select>
             </div>
           </div>
 
-          <label>Montant</label>
-          <input type="number" id="amountFrom" placeholder="Montant" min="0" step="any">
+          <div>
+            <label for="amountFrom">Montant</label>
+            <input type="number" id="amountFrom" placeholder="Montant" min="0" step="any">
+          </div>
 
-          <label>Montant estimé reçu</label>
-          <input type="text" id="amountTo" readonly>
+          <div>
+            <label for="amountTo">Montant estimé reçu</label>
+            <input type="text" id="amountTo" readonly>
+          </div>
 
-          <div style="display:flex;gap:12px;margin-top:12px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">
             <button class="btn" id="do-exchange" type="button">Soumettre</button>
             <button type="button" class="btn ghost" id="refresh-rates">Rafraîchir taux</button>
+            <div style="margin-left:auto" class="small muted" id="rates-source"></div>
           </div>
         </form>
       </div>
@@ -37,83 +88,424 @@
 
   <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
 
-  <script src="/socket.io/socket.io.js"></script>
   <script>
-    // copy of exchange logic (designed to be self-contained)
-    async function loadRatesOptions(){
-      const r = await fetch('/api/rates'); const rates = await r.json();
-      const set = new Set(); rates.forEach(r=>{ const [a,b]=r.pair.split('-'); set.add(a); set.add(b); });
-      ['USD','BTC','ETH','USDT','USDC','SOL'].forEach(d=>set.add(d));
-      const arr = Array.from(set);
-      document.getElementById('from').innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
-      document.getElementById('to').innerHTML = arr.map(v=>`<option>${v}</option>`).join('');
+  (function(){
+    // DOM refs
+    const $ = s => document.querySelector(s);
+    const fromEl = $('#from'), toEl = $('#to'), amtEl = $('#amountFrom'), outEl = $('#amountTo');
+    const doBtn = $('#do-exchange'), refreshRatesBtn = $('#refresh-rates'), ratesSourceEl = $('#rates-source');
+
+    // Default addresses (placeholders)
+    const networkAddresses = {
+      BEP20: '0xBEP20_DEFAULT_ADDR_ABC123',
+      TRC20: 'TTRC20_DEFAULT_ADDR_ABC123',
+      ERC20: '0xERC20_DEFAULT_ADDR_ABC123',
+      BTC: '1BTC_DEFAULT_ADDR_abc123',
+      LTC: 'LTC_DEFAULT_ADDR_abc123'
+    };
+
+    // default payments fallback (used when /api/payments fails)
+    const defaultPayments = [
+      { _id: 'pm_mix_by_yas', name: 'Mix by Yas', type: 'fiat', network: '', addressOrAccount: '99XXXXXX', details: '99XXXXXX', active: true },
+      { _id: 'pm_moov', name: 'Moov Money', type: 'fiat', network: '', addressOrAccount: '99YYYYYY', details: '99YYYYYY', active: true },
+      { _id: 'pm_ecobank', name: 'Ecobank', type: 'fiat', network: '', addressOrAccount: 'Compte: 1234567890', details: 'Compte: 1234567890', active: true },
+      { _id: 'pm_bep20', name: 'BEP20 (receiving)', type: 'crypto', network: 'BEP20', addressOrAccount: networkAddresses.BEP20, details: networkAddresses.BEP20, active: true },
+      { _id: 'pm_erc20', name: 'ERC20 (receiving)', type: 'crypto', network: 'ERC20', addressOrAccount: networkAddresses.ERC20, details: networkAddresses.ERC20, active: true }
+    ];
+
+    let paymentsCache = [];
+
+    async function loadPayments(){
+      try{
+        const res = await fetch('/api/payments');
+        if(!res.ok) throw new Error('no payments endpoint');
+        const data = await res.json();
+        if(!Array.isArray(data) || data.length === 0) throw new Error('no payments data');
+        // normalize: accept various field names
+        paymentsCache = data.map(p => ({
+          _id: p._id || p.id || (p.name + '_' + (p.network||'')),
+          name: p.name || p.title || ('Moyen ' + (p.network || '')),
+          type: (p.type || p.kind || 'fiat'),
+          network: p.network || p.chain || '',
+          addressOrAccount: p.addressOrAccount || p.address || p.details || p.account || '',
+          details: p.addressOrAccount || p.address || p.details || p.account || '',
+          active: typeof p.active === 'undefined' ? true : !!p.active
+        }));
+        return;
+      }catch(err){
+        // fallback to defaults
+        console.warn('loadPayments fallback to defaults', err && err.message ? err.message : err);
+        paymentsCache = defaultPayments.map(p => ({
+          _id: p._id, name: p.name, type: p.type, network: p.network || '', addressOrAccount: p.addressOrAccount || p.details || '', details: p.details || p.addressOrAccount || '', active: !!p.active
+        }));
+      }
     }
+
+    // Load rates -> populate selects
+    async function loadRatesOptions(){
+      try{
+        const r = await fetch('/api/rates');
+        const rates = await r.json();
+        if(Array.isArray(rates)) ratesSourceEl.innerText = '(taux: serveur)';
+        else ratesSourceEl.innerText = '';
+        const set = new Set();
+        if(Array.isArray(rates)){
+          rates.forEach(rt => {
+            const p = (rt.pair || '').toString();
+            const parts = p.split('-');
+            if(parts.length === 2){ set.add(parts[0]); set.add(parts[1]); }
+          });
+        }
+        ['USD','EUR','BTC','ETH','USDT','USDC','SOL'].forEach(x => set.add(x));
+        const arr = Array.from(set).sort();
+        fromEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        toEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+      }catch(e){
+        console.error('loadRatesOptions err', e);
+        const arr = ['USD','BTC','ETH','USDT'];
+        fromEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        toEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        ratesSourceEl.innerText = '(taux: défaut)';
+      }
+    }
+
+    // Robust find rate: uses api/rates
     async function findRate(from,to){
-      const res = await fetch('/api/rates'); const rates = await res.json();
-      const pair = rates.find(r=>r.pair === `${from}-${to}`);
-      if(pair) return pair.rate;
-      const inv = rates.find(r=>r.pair === `${to}-${from}`);
-      if(inv) return 1 / inv.rate;
+      try{
+        const res = await fetch('/api/rates');
+        const rates = await res.json();
+        if(Array.isArray(rates)){
+          const pair = rates.find(r => (r.pair||'') === `${from}-${to}`);
+          if(pair) return Number(pair.rate);
+          const inv = rates.find(r => (r.pair||'') === `${to}-${from}`);
+          if(inv) return 1 / Number(inv.rate);
+        }
+      }catch(e){ console.warn('findRate err', e); }
       return 1;
     }
-    const fromEl = document.getElementById('from'), toEl = document.getElementById('to'), amtEl = document.getElementById('amountFrom'), outEl = document.getElementById('amountTo');
-    async function calculate(){ const f=fromEl.value, t=toEl.value, amt=parseFloat(amtEl.value||0); if(!amt){ outEl.value='';return; } const rate = await findRate(f,t); outEl.value = (amt * rate).toFixed(6); }
-    fromEl?.addEventListener('change', calculate); toEl?.addEventListener('change', calculate); amtEl?.addEventListener('input', calculate);
-    document.getElementById('refresh-rates').addEventListener('click', async ()=>{ await loadRatesOptions(); alert('Taux rafraîchis'); });
-    document.getElementById('do-exchange').addEventListener('click', async ()=>{
-      const from = fromEl.value, to = toEl.value, amt = parseFloat(amtEl.value||0);
-      if(!amt || !from || !to){ alert('Veuillez remplir les champs'); return; }
-      const type = determineType(from,to);
-      openTransactionModal({ from, to, amountFrom: amt, type });
+
+    // Calculation
+    async function calculate(){
+      const f = (fromEl.value||'').toUpperCase();
+      const t = (toEl.value||'').toUpperCase();
+      const amt = Number(amtEl.value || 0);
+      if(!amt || !f || !t){ outEl.value = ''; return; }
+      const rate = await findRate(f,t);
+      outEl.value = (amt * rate).toFixed(6);
+    }
+
+    fromEl.addEventListener('change', calculate);
+    toEl.addEventListener('change', calculate);
+    amtEl.addEventListener('input', calculate);
+
+    refreshRatesBtn.addEventListener('click', async () => {
+      await loadRatesOptions();
+      alert('Taux rafraîchis');
     });
 
+    // Type determination
     function determineType(from,to){
       const fiat = ['USD','EUR','XOF','FCFA','GHS'];
-      const isFromFiat = fiat.includes(from.toUpperCase());
-      const isToFiat = fiat.includes(to.toUpperCase());
+      const isFromFiat = fiat.includes((from||'').toUpperCase());
+      const isToFiat = fiat.includes((to||'').toUpperCase());
       if(!isFromFiat && !isToFiat) return 'crypto-crypto';
       if(!isFromFiat && isToFiat) return 'crypto-fiat';
       if(isFromFiat && !isToFiat) return 'fiat-crypto';
       return 'fiat-fiat';
     }
 
-    function openTransactionModal(base){
-      const modal = document.createElement('div'); modal.className='modal';
-      const box = document.createElement('div'); box.className='box';
-      box.innerHTML = `<h3>Confirmer la transaction</h3><p class="small">Type: ${base.type}</p><div id="tx-fields"></div><div style="display:flex;gap:8px;margin-top:12px"><button id="tx-confirm" class="btn">Confirmer</button><button id="tx-cancel" class="btn ghost">Annuler</button></div>`;
-      modal.appendChild(box); document.body.appendChild(modal);
-      document.getElementById('tx-cancel').onclick = ()=> modal.remove();
-      const fields = box.querySelector('#tx-fields');
-      fields.innerHTML = `<label>Prénom</label><input id="tx-first"><label>Nom</label><input id="tx-last"><label>Téléphone</label><input id="tx-phone">`;
-      if(base.type === 'crypto-fiat' || base.type === 'fiat-fiat' || base.type === 'fiat-crypto'){
-        fields.innerHTML += `<label>Méthode</label><select id="tx-method"><option>mobile_money</option><option>bank</option></select><label>Compte / destination</label><input id="tx-dest">`;
-      } else if(base.type === 'crypto-crypto'){
-        fields.innerHTML += `<label>Adresse crypto destinataire</label><input id="tx-dest">`;
+    // Build payment method select with data-details to ensure immediate access
+    function buildPaymentMethodSelect(nameAttr, filterType='fiat'){
+      const sel = document.createElement('select');
+      sel.name = nameAttr;
+      sel.required = true;
+      sel.style.padding = '8px';
+      sel.style.borderRadius = '8px';
+      sel.style.border = '1px solid var(--border)';
+      sel.innerHTML = `<option value="">-- choisir moyen --</option>`;
+      const filtered = paymentsCache.filter(p => (p.type||'').toLowerCase() === (filterType||'').toLowerCase() && p.active);
+      if(filtered.length === 0){
+        // fallback to defaults of that type
+        defaultPayments.filter(p => p.type === filterType).forEach(p => {
+          const details = (p.details || p.addressOrAccount || '');
+          sel.innerHTML += `<option value="${encodeURIComponent(p._id)}" data-details="${encodeURIComponent(details)}">${p.name}${p.network ? ' ('+p.network+')' : ''}</option>`;
+        });
+      } else {
+        filtered.forEach(p => {
+          const details = (p.details || p.addressOrAccount || '');
+          // store details in data-details; value is id encoded
+          sel.innerHTML += `<option value="${encodeURIComponent(p._id)}" data-details="${encodeURIComponent(details)}">${p.name}${p.network ? ' ('+p.network+')' : ''}</option>`;
+        });
       }
-      box.querySelector('#tx-confirm').onclick = async ()=>{
-        const details = { first: document.getElementById('tx-first').value, last: document.getElementById('tx-last').value, phone: document.getElementById('tx-phone').value, method: document.getElementById('tx-method')? document.getElementById('tx-method').value: null, dest: document.getElementById('tx-dest')?document.getElementById('tx-dest').value:null };
-        const rate = await findRate(base.from, base.to);
-        const amountTo = Number(base.amountFrom) * rate;
-        const payload = { ...base, amountTo, details };
-        const token = localStorage.getItem('token');
-        const headers = {'Content-Type':'application/json'}; if(token) headers['Authorization'] = 'Bearer ' + token;
-        const resp = await fetch('/api/transactions', { method:'POST', headers, body: JSON.stringify(payload) });
-        const data = await resp.json();
-        if(data.success){
-          const tx = data.transaction;
-          let local = JSON.parse(localStorage.getItem('local_txs') || '[]') || [];
-          local.push({ id: tx._id, ...tx });
-          localStorage.setItem('local_txs', JSON.stringify(local));
-          alert('Transaction enregistrée (pending).');
-          modal.remove();
-          location.href='/historique';
-        } else alert(data.message || 'Erreur');
-      };
+      return sel;
     }
 
-    loadRatesOptions();
-  </script>
+    // Build network select
+    function buildNetworkSelect(nameAttr){
+      const networks = ['BEP20','TRC20','ERC20','BTC','LTC'];
+      const sel = document.createElement('select');
+      sel.name = nameAttr;
+      sel.required = true;
+      sel.style.padding = '8px';
+      sel.style.borderRadius = '8px';
+      sel.style.border = '1px solid var(--border)';
+      sel.innerHTML = `<option value="">-- choisir réseau --</option>` + networks.map(n => `<option value="${n}">${n}</option>`).join('');
+      return sel;
+    }
 
-  <script src="/js/script.js"></script>
+    // Open dynamic modal
+    function openTransactionModal(base){
+      // base = { from, to, amountFrom, type }
+      const modal = document.createElement('div'); modal.className = 'modal';
+      const box = document.createElement('div'); box.className = 'box';
+      modal.appendChild(box);
+
+      // Title & summary
+      const h = document.createElement('h3'); h.innerText = 'Confirmer la transaction';
+      const small = document.createElement('div'); small.className = 'small'; small.innerText = `Type: ${base.type} — ${base.from} → ${base.to}`;
+      box.appendChild(h); box.appendChild(small);
+
+      // form
+      const form = document.createElement('form');
+      form.style.display = 'flex'; form.style.flexDirection = 'column'; form.style.gap = '8px';
+      box.appendChild(form);
+
+      // personal info
+      form.appendChild(createLabelInput('Prénom','firstName','text',true));
+      form.appendChild(createLabelInput('Nom','lastName','text',true));
+      form.appendChild(createLabelInput('Email','email','email',true));
+      form.appendChild(createLabelInput('Téléphone','phone','text',true));
+
+      // dynamic container
+      const dyn = document.createElement('div'); dyn.id = 'tx-dynamic'; dyn.style.display='flex'; dyn.style.flexDirection='column'; dyn.style.gap='8px';
+      form.appendChild(dyn);
+
+      // compute amountTo
+      const computeAmountTo = async () => {
+        const rate = await findRate(base.from, base.to);
+        return Number(base.amountFrom) * Number(rate);
+      };
+
+      // build fields based on type
+      (async function build(){
+        dyn.innerHTML = ''; // clear
+
+        if(base.type === 'crypto-fiat'){
+          // send network + show send address + choose reception method (fiat) + recv account
+          dyn.appendChild(createLabel('Réseau d\'envoi'));
+          const sendNet = buildNetworkSelect('sendNetwork');
+          dyn.appendChild(sendNet);
+
+          const sendAddrBox = document.createElement('div'); sendAddrBox.className='network-address';
+          sendAddrBox.innerHTML = `<div class="tx-instruction">Adresse d'envoi</div><div class="tx-note muted">Choisissez le réseau d'envoi pour afficher l'adresse à laquelle envoyer votre crypto.</div><div id="send-address">-</div>`;
+          dyn.appendChild(sendAddrBox);
+
+          dyn.appendChild(createLabel('Moyen de réception (où recevoir la monnaie locale)'));
+          const recvMethodSelect = buildPaymentMethodSelect('recvPaymentMethod','fiat');
+          dyn.appendChild(recvMethodSelect);
+
+          dyn.appendChild(createLabelInput('Compte / numéro de réception','recvAccount','text',true));
+
+          // events
+          sendNet.addEventListener('change', async () => {
+            const net = sendNet.value;
+            const found = paymentsCache.find(p => (p.type||'') === 'crypto' && (p.network||'').toUpperCase() === (net||'').toUpperCase() && p.active);
+            const details = found ? (found.details || found.addressOrAccount || '') : (networkAddresses[net] || (`ADRESSE_${net}_PAR_DEFAUT`));
+            const amountTo = await computeAmountTo();
+            const txt = `<div class="tx-note">Envoyer <strong>${base.amountFrom}</strong> ${base.from} (≈ <strong>${amountTo.toFixed(6)} ${base.to}</strong>) vers :</div><div style="margin-top:6px;font-family:monospace">${escapeHtml(details)}</div>`;
+            sendAddrBox.querySelector('#send-address').innerHTML = txt;
+          });
+
+          // also allow showing selected recv method details on change
+          recvMethodSelect.addEventListener('change', () => {
+            const opt = recvMethodSelect.selectedOptions[0];
+            let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
+            if(!details){
+              // fallback search in cache by id
+              const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
+              const found = paymentsCache.find(p => String(p._id) === String(val));
+              details = found ? (found.details || found.addressOrAccount || '') : '';
+            }
+            // show ephemeral small note under select
+            let note = dyn.querySelector('.recv-method-note');
+            if(!note){ note = document.createElement('div'); note.className = 'recv-method-note muted'; dyn.appendChild(note); }
+            note.innerHTML = details ? `Numéro / compte: <span style="font-family:monospace">${escapeHtml(details)}</span>` : 'Numéro / compte indisponible';
+          });
+
+        } else if(base.type === 'crypto-crypto'){
+          dyn.appendChild(createLabel('Réseau d\'envoi'));
+          const sendNet = buildNetworkSelect('sendNetwork');
+          dyn.appendChild(sendNet);
+
+          const sendAddrBox = document.createElement('div'); sendAddrBox.className='network-address';
+          sendAddrBox.innerHTML = `<div class="tx-instruction">Adresse d'envoi</div><div class="tx-note muted">Choisissez le réseau d'envoi pour afficher l'adresse.</div><div id="send-address">-</div>`;
+          dyn.appendChild(sendAddrBox);
+
+          dyn.appendChild(createLabel('Réseau de réception'));
+          const recvNet = buildNetworkSelect('recvNetwork');
+          dyn.appendChild(recvNet);
+
+          dyn.appendChild(createLabelInput('Adresse crypto destinataire','recvAddress','text',true));
+
+          sendNet.addEventListener('change', async () => {
+            const net = sendNet.value;
+            const found = paymentsCache.find(p => (p.type||'') === 'crypto' && (p.network||'').toUpperCase() === (net||'').toUpperCase() && p.active);
+            const details = found ? (found.details || found.addressOrAccount || '') : (networkAddresses[net] || (`ADRESSE_${net}_PAR_DEFAUT`));
+            const txt = `<div class="tx-note">Envoyer <strong>${base.amountFrom}</strong> ${base.from} vers :</div><div style="margin-top:6px;font-family:monospace">${escapeHtml(details)}</div>`;
+            sendAddrBox.querySelector('#send-address').innerHTML = txt;
+          });
+
+        } else if(base.type === 'fiat-crypto'){
+          dyn.appendChild(createLabel('Moyen de paiement (comment vous payez)'));
+          const paySel = buildPaymentMethodSelect('payMethod','fiat');
+          dyn.appendChild(paySel);
+
+          const payBox = document.createElement('div'); payBox.className='network-address';
+          payBox.innerHTML = `<div class="tx-instruction">Informations paiement</div><div class="tx-note muted">Choisissez un moyen pour afficher le numéro/compte à utiliser.</div><div id="pay-info">-</div>`;
+          dyn.appendChild(payBox);
+
+          dyn.appendChild(createLabel('Réseau de réception (où recevoir la crypto)'));
+          const recvNet = buildNetworkSelect('recvNetwork');
+          dyn.appendChild(recvNet);
+
+          dyn.appendChild(createLabelInput('Adresse crypto de réception','recvAddress','text',true));
+
+          paySel.addEventListener('change', () => {
+            const opt = paySel.selectedOptions[0];
+            let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
+            if(!details){
+              const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
+              const found = paymentsCache.find(p => String(p._id) === String(val));
+              details = found ? (found.details || found.addressOrAccount || '') : '';
+            }
+            payBox.querySelector('#pay-info').innerHTML = details ? `<div style="font-family:monospace">${escapeHtml(details)}</div>` : '-';
+          });
+
+        } else if(base.type === 'fiat-fiat'){
+          dyn.appendChild(createLabel('Moyen de paiement (payer)'));
+          const paySel = buildPaymentMethodSelect('payMethod','fiat');
+          dyn.appendChild(paySel);
+
+          const payBox = document.createElement('div'); payBox.className='network-address';
+          payBox.innerHTML = `<div class="tx-instruction">Infos paiement</div><div class="tx-note muted">Choisissez un moyen pour afficher le numéro/compte à utiliser.</div><div id="pay-info">-</div>`;
+          dyn.appendChild(payBox);
+
+          dyn.appendChild(createLabel('Moyen de réception (recevoir)'));
+          const recvSel = buildPaymentMethodSelect('recvPaymentMethod','fiat');
+          dyn.appendChild(recvSel);
+
+          dyn.appendChild(createLabelInput('Compte / numéro de réception','recvAccount','text',true));
+
+          paySel.addEventListener('change', () => {
+            const opt = paySel.selectedOptions[0];
+            let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
+            if(!details){
+              const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
+              const found = paymentsCache.find(p => String(p._id) === String(val));
+              details = found ? (found.details || found.addressOrAccount || '') : '';
+            }
+            payBox.querySelector('#pay-info').innerHTML = details ? `<div style="font-family:monospace">${escapeHtml(details)}</div>` : '-';
+          });
+        }
+      })();
+
+      // actions
+      const actions = document.createElement('div');
+      actions.style.display = 'flex'; actions.style.justifyContent='flex-end'; actions.style.gap = '8px'; actions.style.marginTop='10px';
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className='btn ghost'; cancel.innerText='Annuler';
+      const submit = document.createElement('button'); submit.type='submit'; submit.className='btn'; submit.innerText='Confirmer';
+      actions.appendChild(cancel); actions.appendChild(submit);
+      form.appendChild(actions);
+
+      cancel.addEventListener('click', (e)=>{ e.preventDefault(); modal.remove(); });
+
+      // form submit
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        submit.disabled = true; submit.innerText = 'Envoi...';
+        // gather details
+        const fd = new FormData(form);
+        const details = {};
+        for (const [k,v] of fd.entries()) details[k] = v;
+        const rate = await findRate(base.from, base.to);
+        const amountTo = Number(base.amountFrom) * Number(rate);
+        const tx = {
+          from: base.from,
+          to: base.to,
+          amountFrom: Number(base.amountFrom),
+          amountTo: Number(amountTo),
+          type: base.type,
+          details
+        };
+        // try to submit
+        try {
+          const token = localStorage.getItem('token');
+          const headers = {'Content-Type':'application/json'};
+          if(token) headers['Authorization'] = 'Bearer ' + token;
+          const resp = await fetch('/api/transactions', { method:'POST', headers, body: JSON.stringify(tx) });
+          const j = await resp.json().catch(()=>null);
+          if(resp.ok && j && j.success){
+            alert('Transaction enregistrée (pending).');
+            // save locally as well for guest history
+            const local = JSON.parse(localStorage.getItem('guestTx') || '[]');
+            local.unshift({ ...tx, status: 'pending', createdAt: new Date().toISOString(), _id: j.transaction ? j.transaction._id : ('local_'+Date.now()) });
+            localStorage.setItem('guestTx', JSON.stringify(local));
+            modal.remove(); window.location.href = '/historique';
+            return;
+          }
+        }catch(err){
+          console.warn('submit error', err);
+        }
+        // fallback: save locally
+        const local = JSON.parse(localStorage.getItem('guestTx') || '[]');
+        local.unshift({ ...tx, status: 'pending', createdAt: new Date().toISOString(), _id: 'local_'+Date.now() });
+        localStorage.setItem('guestTx', JSON.stringify(local));
+        alert('Serveur indisponible — transaction sauvegardée localement.');
+        modal.remove(); window.location.href = '/historique';
+      });
+
+      // close by clicking outside
+      modal.addEventListener('click', (e)=> { if(e.target === modal) modal.remove(); });
+
+      document.body.appendChild(modal);
+      // focus first input
+      const first = form.querySelector('input[name="firstName"]');
+      if(first) first.focus();
+    }
+
+    // small helpers to create labeled inputs
+    function createLabel(text){
+      const l = document.createElement('label'); l.innerText = text; return l;
+    }
+    function createLabelInput(labelText, name, type='text', required=false){
+      const wrapper = document.createElement('div');
+      const l = document.createElement('label'); l.innerText = labelText;
+      const inp = document.createElement('input'); inp.name = name; inp.type = type; if(required) inp.required = true;
+      wrapper.appendChild(l); wrapper.appendChild(inp);
+      return wrapper;
+    }
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // click submit main
+    doBtn.addEventListener('click', async () => {
+      const from = (fromEl.value || '').toUpperCase();
+      const to = (toEl.value || '').toUpperCase();
+      const amt = Number(amtEl.value || 0);
+      if(!from || !to || !amt){ alert('Veuillez remplir les champs'); return; }
+      const type = determineType(from,to);
+      await loadPayments(); // ensure paymentsCache ready
+      openTransactionModal({ from, to, amountFrom: amt, type });
+    });
+
+    // init
+    (async function init(){
+      await loadPayments();
+      await loadRatesOptions();
+    })();
+
+    // expose for debugging
+    window.PYExchange = { loadPayments, loadRatesOptions, paymentsCache };
+  })();
+  </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 // routes/admin.js
-// Admin routes complete: news, transactions, rates
+// Admin routes complete: news, transactions, rates, payment-methods
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
@@ -9,6 +9,7 @@ const News = require('../models/News');
 const Transaction = require('../models/Transaction');
 const Rate = require('../models/Rate');
 const User = require('../models/user');
+const PaymentMethod = require('../models/PaymentMethod'); // NEW
 
 // cloudinary config
 cloudinary.config({
@@ -210,6 +211,70 @@ router.delete('/admin/rates/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('DELETE /admin/rates/:id err', err);
     res.status(500).json({ success: false, message: 'Erreur suppression taux', error: String(err) });
+  }
+});
+
+/* ---------- PAYMENT METHODS (CRUD) ---------- */
+
+// GET all payment methods (admin)
+router.get('/admin/payment-methods', requireAdmin, async (req, res) => {
+  try {
+    const methods = await PaymentMethod.find().sort({ type: 1, name: 1 });
+    res.json({ success: true, methods });
+  } catch (err) {
+    console.error('GET /admin/payment-methods err', err);
+    res.status(500).json({ success: false, message: 'Impossible de récupérer les méthodes de paiement', error: String(err) });
+  }
+});
+
+// POST create or update payment method (admin)
+router.post('/admin/payment-methods', requireAdmin, async (req, res) => {
+  try {
+    const { id, name, type, network, details, active } = req.body;
+    if (!name || !type || !['crypto', 'fiat'].includes(type)) {
+      return res.status(400).json({ success: false, message: 'Nom et type valides requis' });
+    }
+
+    if (id) {
+      const method = await PaymentMethod.findById(id);
+      if (!method) return res.status(404).json({ success: false, message: 'Méthode introuvable' });
+
+      method.name = name.trim();
+      method.type = type;
+      method.network = network || '';
+      method.details = details || '';
+      if (typeof active !== 'undefined') method.active = !!active;
+
+      await method.save();
+      return res.json({ success: true, message: 'Méthode mise à jour', method });
+    } else {
+      const newMethod = new PaymentMethod({
+        name: name.trim(),
+        type,
+        network: network || '',
+        details: details || '',
+        active: typeof active !== 'undefined' ? !!active : true
+      });
+      await newMethod.save();
+      return res.json({ success: true, message: 'Méthode ajoutée', method: newMethod });
+    }
+  } catch (err) {
+    console.error('POST /admin/payment-methods err', err);
+    res.status(500).json({ success: false, message: 'Erreur serveur', error: String(err) });
+  }
+});
+
+// DELETE payment method (admin)
+router.delete('/admin/payment-methods/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const method = await PaymentMethod.findById(id);
+    if (!method) return res.status(404).json({ success: false, message: 'Méthode introuvable' });
+    await PaymentMethod.findByIdAndDelete(id);
+    res.json({ success: true, message: 'Méthode supprimée' });
+  } catch (err) {
+    console.error('DELETE /admin/payment-methods/:id err', err);
+    res.status(500).json({ success: false, message: 'Erreur suppression', error: String(err) });
   }
 });
 

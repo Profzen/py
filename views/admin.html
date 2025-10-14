@@ -14,13 +14,18 @@
     }
 
     .admin-container{max-width:1200px;margin:0 auto;padding:18px;}
-    .admin-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+    .admin-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
     .admin-header .brand{font-weight:800;color:var(--admin-accent);font-size:20px}
     .admin-header .meta{color:var(--muted-2);font-size:14px}
 
+    /* Admin top nav */
+    .admin-top-nav{display:flex;gap:8px;align-items:center;margin-left:12px}
+    .admin-top-nav .nav-btn{padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--admin-accent)}
+    .admin-top-nav .nav-btn.active{background:linear-gradient(90deg,var(--admin-accent),#1fa9ff);color:#fff}
+
     /* Transactions full width block */
     .tx-block{background:var(--admin-card-bg);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow);margin-bottom:16px}
-    .tx-block .tx-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .tx-block .tx-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
     .tx-wrap{margin-top:12px}
 
     /* Table style (desktop) */
@@ -35,7 +40,7 @@
     .tx-card .muted{color:var(--muted)}
 
     /* News editor & list */
-    .two-col{display:grid;grid-template-columns:1fr 380px;gap:18px}
+    .two-col{display:grid;grid-template-columns:1fr 480px;gap:18px}
     .card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)}
     .card h3{margin:0 0 8px}
     .form-row{display:flex;gap:8px}
@@ -49,69 +54,87 @@
 
     /* Rates */
     .rates-grid{display:flex;flex-direction:column;gap:8px}
+    .rates-top{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .rates-search{padding:8px;border-radius:8px;border:1px solid var(--border);flex:1}
+
+    /* Payments section */
+    .payments-grid{display:flex;flex-direction:column;gap:8px}
+    .payments-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .payment-item{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
+    .payment-item .meta{font-size:13px;color:var(--muted)}
+    .payment-form-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .payment-form-row input, .payment-form-row select { padding:8px;border-radius:8px;border:1px solid var(--border); }
 
     /* helpers */
     .tiny{font-size:13px;color:var(--muted)}
     .actions{display:flex;gap:8px}
 
-    /* responsive */
+    /* "Voir plus" */
+    .tx-more{display:flex;justify-content:center;margin-top:10px}
+
+    /* responsive adjustments */
+    @media (min-width:1200px){
+      /* give right column more space on large screens */
+      .admin-container{max-width:1400px}
+      .two-col{grid-template-columns:1fr 560px;gap:22px}
+    }
+    @media (max-width:1200px){
+      .two-col{grid-template-columns:1fr 420px}
+    }
     @media (max-width:1100px){
       .two-col{grid-template-columns:1fr}
       .admin-header{flex-direction:column;align-items:flex-start;gap:8px}
       .tx-table{display:none}
       .tx-cards{display:flex}
       .admin-header .meta{order:2}
+      .admin-top-nav{margin-left:0;margin-top:8px}
     }
     @media (max-width:480px){
       .news-thumb{width:72px;height:56px}
       .tx-card .row{flex-direction:column;align-items:flex-start}
+      .payment-form-row{flex-direction:column}
     }
+
+    /* small improvements for modal content */
+    .modal .box .kv{display:flex;justify-content:space-between;gap:12px}
+    .modal .box .kv .col{flex:1}
+    .modal .box .details{margin-top:10px;border-top:1px dashed var(--border);padding-top:10px}
+    .modal .box .details dt{font-weight:700}
+    .modal .box .details dd{margin:0 0 8px}
+    .status-chip{display:inline-block;padding:6px 8px;border-radius:8px;font-weight:700}
+    .status-pending{background:#fff4e6;color:#a66a00;border:1px solid #ffe3b8}
+    .status-approved{background:#e9fff2;color:#0b7b3b;border:1px solid #bff0c9}
+    .status-rejected{background:#ffecec;color:#a22b2b;border:1px solid #ffc9c9}
   </style>
 </head>
 <body>
   <main class="admin-container">
     <!-- Header -->
     <header class="admin-header">
-      <div>
-        <div class="brand">PY Crypto — Admin</div>
-        <div class="meta">Gérer news • taux • transactions</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div>
+          <div class="brand">PY Crypto — Admin</div>
+          <div class="meta">Gérer news • taux • transactions • paiements</div>
+        </div>
+
+        <!-- Admin top nav -->
+        <div class="admin-top-nav" role="navigation" aria-label="Admin navigation">
+          <button class="nav-btn" data-target="rates-section">Taux & devises</button>
+          <button class="nav-btn" data-target="news-section">News</button>
+          <button class="nav-btn" data-target="transactions-section">Transactions</button>
+        </div>
       </div>
+
       <div style="display:flex;align-items:center;gap:10px">
         <div id="admin-username" class="tiny"></div>
         <button id="btn-logout" class="btn ghost">Déconnexion</button>
       </div>
     </header>
 
-    <!-- Transactions full width -->
-    <section class="tx-block card" aria-labelledby="tx-title">
-      <div class="tx-head">
-        <h3 id="tx-title">Transactions récentes</h3>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="tx-filter" placeholder="Rechercher utilisateur / statut / pair" style="padding:8px;border-radius:8px;border:1px solid var(--border)">
-          <button id="btn-refresh-tx" class="btn ghost">Rafraîchir</button>
-        </div>
-      </div>
-
-      <div class="tx-wrap">
-        <!-- Desktop table -->
-        <table class="tx-table" id="tx-table">
-          <thead>
-            <tr><th>Date</th><th>User</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th><th>Actions</th></tr>
-          </thead>
-          <tbody id="tx-tbody">
-            <tr><td colspan="8" class="tiny">Chargement...</td></tr>
-          </tbody>
-        </table>
-
-        <!-- Mobile cards -->
-        <div id="tx-cards" class="tx-cards"></div>
-      </div>
-    </section>
-
-    <!-- Two column area: Left (news editor + list) / Right (rates + quick actions) -->
+    <!-- Two column area: Left (news editor + list) / Right (rates + payments + quick actions) -->
     <section class="two-col" style="margin-top:16px">
       <!-- Left column -->
-      <div>
+      <div id="news-section">
         <div class="card">
           <h3>Créer / Éditer une news</h3>
           <form id="news-form">
@@ -147,8 +170,12 @@
 
       <!-- Right column -->
       <aside>
-        <div class="card">
+        <div class="card" id="rates-section">
           <h3>Taux & devises</h3>
+          <div class="rates-top">
+            <input id="rates-filter" class="rates-search" placeholder="Rechercher paire (ex: BTC-USD) ou partie (BTC)">
+            <button id="rates-refresh" class="btn ghost">Rafraîchir</button>
+          </div>
           <div id="rates-list" class="rates-grid tiny" style="margin-top:8px">Chargement...</div>
           <div style="display:flex;gap:8px;margin-top:10px">
             <input id="r-pair" placeholder="Pair (ex: BTC-USD)" style="padding:8px;border-radius:8px;border:1px solid var(--border);flex:1">
@@ -156,7 +183,51 @@
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button id="r-add" class="btn">Ajouter / Modifier</button>
-            <button id="btn-refresh" class="btn ghost">Rafraîchir</button>
+            <button id="btn-refresh" class="btn ghost">Rafraîchir news+taux+paiements</button>
+          </div>
+
+          <div style="margin-top:12px" class="tiny muted">Gérer les moyens de paiement ci-dessous</div>
+        </div>
+
+        <!-- Payment methods card (just under rates) -->
+        <div class="card" style="margin-top:12px">
+          <h3>Moyens de paiement</h3>
+
+          <div style="margin-top:6px" class="tiny">Ajouter / éditer ou supprimer des moyens (crypto & fiat). Les changements sont stockés en base et affectent <code>/api/payments</code>.</div>
+
+          <div class="payments-grid">
+            <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+              <input id="pm-search" placeholder="Rechercher (nom / réseau)" style="padding:8px;border-radius:8px;border:1px solid var(--border);flex:1">
+              <button id="pm-refresh" class="btn ghost">Rafraîchir</button>
+            </div>
+
+            <div id="payments-list" class="payments-list tiny" style="margin-top:8px">
+              Chargement...
+            </div>
+
+            <div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">
+              <h4 style="margin:0 0 8px">Ajouter / Modifier un moyen</h4>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input id="pm-id" type="hidden">
+                <input id="pm-name" placeholder="Nom (ex: Moov Money / Adresse BTC)" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--border)">
+              </div>
+              <div class="payment-form-row" style="margin-top:8px">
+                <select id="pm-type" style="width:140px">
+                  <option value="fiat">fiat</option>
+                  <option value="crypto">crypto</option>
+                </select>
+                <input id="pm-network" placeholder="Réseau (ex: BEP20 / TRC20) — laissez vide pour fiat" style="min-width:140px">
+                <input id="pm-details" placeholder="Détails: N° de compte ou adresse" style="flex:1">
+                <label style="display:flex;align-items:center;gap:8px;margin-left:6px">
+                  <input id="pm-active" type="checkbox" checked> Actif
+                </label>
+              </div>
+
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+                <button id="pm-clear" class="btn ghost">Effacer</button>
+                <button id="pm-save" class="btn">Enregistrer</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -169,6 +240,37 @@
         </div>
       </aside>
     </section>
+    
+
+    <!-- Transactions full width -->
+    <section id="transactions-section" class="tx-block card" aria-labelledby="tx-title">
+      <div class="tx-head">
+        <h3 id="tx-title">Transactions récentes</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="tx-filter" placeholder="Rechercher utilisateur / statut / pair" style="padding:8px;border-radius:8px;border:1px solid var(--border)">
+          <button id="btn-refresh-tx" class="btn ghost">Rafraîchir</button>
+        </div>
+      </div>
+
+      <div class="tx-wrap">
+        <!-- Desktop table -->
+        <table class="tx-table" id="tx-table" aria-live="polite">
+          <thead>
+            <tr><th>Date</th><th>User</th><th>Type</th><th>Pair</th><th>Montant</th><th>Reçu</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="tx-tbody">
+            <tr><td colspan="8" class="tiny">Chargement...</td></tr>
+          </tbody>
+        </table>
+
+        <!-- Mobile cards -->
+        <div id="tx-cards" class="tx-cards"></div>
+
+        <div class="tx-more">
+          <button id="tx-load-more" class="btn ghost" style="display:none">Voir plus</button>
+        </div>
+      </div>
+    </section>
 
     <footer style="margin-top:18px" class="tiny muted">© PY Crypto — Admin</footer>
   </main>
@@ -178,17 +280,15 @@
 
   <script>
   /* ===================
-     admin front JS (complete)
-     - token must be in localStorage 'token'
-     - endpoints:
-         POST /admin/upload (file form field 'file' - requires token)
-         POST /admin/news
-         DELETE /admin/news/:id
-         GET /admin/news
-         GET /admin/transactions
-         POST /admin/transactions/:id/status
-         GET /api/rates
-         POST /admin/rates
+     admin front JS (updated)
+     - Based strictly on your original file, with enhancements:
+        * top nav (scroll to sections)
+        * rates search
+        * transactions pagination (10 per page) + "Voir plus"
+        * improved transaction modal (readable, change status inside modal)
+        * news: convert newlines -> <br> before sending; when editing convert <br> back -> \n
+        * responsive tweaks and Payments CRUD integrated
+     - endpoints used: /admin/upload, /admin/news, /admin/transactions, /admin/transactions/:id, /admin/transactions/:id/status, /api/rates, /admin/payment-methods, /api/payments
      =================== */
 
   (function(){
@@ -229,63 +329,79 @@
     const nFile = $('#n-file'), nPreview = $('#n-preview'), nTitle = $('#n-title'), nDesc = $('#n-desc'), nContent = $('#n-content'), nId = $('#n-id');
     const newsList = $('#news-list'), btnLoadNews = $('#btn-load-news'), btnSeed = $('#btn-seed-sample');
     const ratesList = $('#rates-list'), rPair = $('#r-pair'), rValue = $('#r-value'), rAdd = $('#r-add'), btnRefresh = $('#btn-refresh');
+    const ratesFilter = $('#rates-filter'), ratesRefreshBtn = $('#rates-refresh');
+
+    // Payments DOM refs
+    const pmListEl = $('#payments-list'), pmSearch = $('#pm-search'), pmRefresh = $('#pm-refresh');
+    const pmId = $('#pm-id'), pmName = $('#pm-name'), pmType = $('#pm-type'), pmNetwork = $('#pm-network'), pmDetails = $('#pm-details'), pmActive = $('#pm-active');
+    const pmSave = $('#pm-save'), pmClear = $('#pm-clear');
 
     // Upload helper (POST /admin/upload)
-   // uploadFileToServer : renvoie { url, public_id } ou lance une erreur
-async function uploadFileToServer(file){
-  if(!file) return null;
-  const fd = new FormData();
-  fd.append('file', file);
+    // uploadFileToServer : renvoie { url, public_id } ou lance une erreur
+    async function uploadFileToServer(file){
+      if(!file) return null;
+      const fd = new FormData();
+      fd.append('file', file);
 
-  const token = localStorage.getItem('token');
-  const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
 
-  const res = await fetch('/admin/upload', { method: 'POST', headers, body: fd });
-  const text = await res.text();
-  // essayer parser JSON proprement
-  let json;
-  try { json = JSON.parse(text); } catch(e) {
-    // server returned non-json (html) -> throw with body snippet
-    throw new Error('Upload failed (non-JSON response): ' + (text || '(empty)'));
-  }
+      const res = await fetch('/admin/upload', { method: 'POST', headers, body: fd });
+      const text = await res.text();
+      // essayer parser JSON proprement
+      let json;
+      try { json = JSON.parse(text); } catch(e) {
+        // server returned non-json (html) -> throw with body snippet
+        throw new Error('Upload failed (non-JSON response): ' + (text || '(empty)'));
+      }
 
-  if(!res.ok || !json.success){
-    // json.error peut être objet ou string ; rendre lisible
-    const errText = (json.error && (typeof json.error === 'string' ? json.error : (json.error.message||JSON.stringify(json.error)))) || json.message || ('status ' + res.status);
-    throw new Error('Upload failed: ' + JSON.stringify({ success: json.success, message: json.message, error: errText }));
-  }
+      if(!res.ok || !json.success){
+        const errText = (json.error && (typeof json.error === 'string' ? json.error : (json.error.message||JSON.stringify(json.error)))) || json.message || ('status ' + res.status);
+        throw new Error('Upload failed: ' + JSON.stringify({ success: json.success, message: json.message, error: errText }));
+      }
 
-  return { url: json.url, public_id: json.public_id || null };
-}
+      return { url: json.url, public_id: json.public_id || null };
+    }
 
+    /* ---------------------------
+       Transactions (client-side pagination)
+       --------------------------- */
+    let transactionsCache = []; // full list returned by /admin/transactions
+    let txPage = 0;
+    const TX_PAGE_SIZE = 10;
 
-    // Load transactions (admin)
+    // Load transactions from server (cached)
     async function loadTransactions(){
       try {
         const res = await authFetch('/admin/transactions');
         if(!res.ok) throw new Error('Impossible de charger transactions');
         const txs = await res.json();
-        renderTransactions(txs);
+        transactionsCache = Array.isArray(txs) ? txs : [];
+        txPage = 0;
+        renderTransactionsPage();
       } catch(e){
         console.error(e); txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Erreur chargement</td></tr>'; txCards.innerHTML = '';
       }
     }
 
-    // render transactions (table + cards)
-    function renderTransactions(txs){
-      // filter
+    // Render current page (append mode for Voir plus)
+    function renderTransactionsPage(append=false){
       const q = txFilter.value.trim().toLowerCase();
-      const filtered = txs.filter(t => {
+      const filtered = transactionsCache.filter(t => {
         if(!q) return true;
         const u = (t.user && (t.user.username||t.user.email)) || 'guest';
-        return String(u).toLowerCase().includes(q) || String(t.status||'').toLowerCase().includes(q) || (t.from + ' ' + t.to).toLowerCase().includes(q);
+        return String(u).toLowerCase().includes(q) || String(t.status||'').toLowerCase().includes(q) || ((t.from||'') + ' ' + (t.to||'')).toLowerCase().includes(q);
       });
 
-      // table (desktop)
-      if(filtered.length === 0){
+      const start = 0;
+      const end = (txPage + 1) * TX_PAGE_SIZE;
+      const pageItems = filtered.slice(0, end);
+
+      // desktop table
+      if(pageItems.length === 0){
         txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Aucune transaction</td></tr>';
       } else {
-        txTbody.innerHTML = filtered.map(t => {
+        txTbody.innerHTML = pageItems.map(t => {
           const u = t.user ? (t.user.username || t.user.email) : 'Guest';
           return `<tr>
             <td>${new Date(t.createdAt).toLocaleString()}</td>
@@ -294,53 +410,165 @@ async function uploadFileToServer(file){
             <td>${escapeHtml((t.from||'') + ' → ' + (t.to||''))}</td>
             <td>${escapeHtml(String(t.amountFrom||''))}</td>
             <td>${escapeHtml(String(t.amountTo||''))}</td>
-            <td>${escapeHtml(t.status||'')}</td>
+            <td>${renderStatusChip(t.status||'')}</td>
             <td>
               <div class="actions">
-                <button class="btn ghost" onclick="viewTx('${t._id}')">Voir</button>
-                <button class="btn" onclick="setStatus('${t._id}','approved')">Valider</button>
-                <button class="btn ghost" onclick="setStatus('${t._id}','rejected')">Rejeter</button>
+                <button class="btn ghost" data-id="${t._id}" data-action="view">Voir</button>
+                <button class="btn" data-id="${t._id}" data-action="approve">Valider</button>
+                <button class="btn ghost" data-id="${t._id}" data-action="reject">Rejeter</button>
               </div>
             </td>
           </tr>`; }).join('');
       }
 
       // cards (mobile)
-      txCards.innerHTML = filtered.map(t => {
+      txCards.innerHTML = pageItems.map(t => {
         const u = t.user ? (t.user.username || t.user.email) : 'Guest';
         return `<div class="tx-card">
           <div class="row"><strong>${escapeHtml(u)}</strong><span class="tiny muted">${new Date(t.createdAt).toLocaleString()}</span></div>
           <div class="row"><span>Pair: <strong>${escapeHtml((t.from||'') + '→' + (t.to||''))}</strong></span><span>Status: <strong>${escapeHtml(t.status||'')}</strong></span></div>
           <div class="row"><span>Montant: ${escapeHtml(String(t.amountFrom||''))}</span><span>Reçu: ${escapeHtml(String(t.amountTo||''))}</span></div>
           <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn ghost" onclick="viewTx('${t._id}')">Voir</button>
-            <button class="btn" onclick="setStatus('${t._id}','approved')">Valider</button>
-            <button class="btn ghost" onclick="setStatus('${t._id}','rejected')">Rejeter</button>
+            <button class="btn ghost" data-id="${t._id}" data-action="view">Voir</button>
+            <button class="btn" data-id="${t._id}" data-action="approve">Valider</button>
+            <button class="btn ghost" data-id="${t._id}" data-action="reject">Rejeter</button>
           </div>
         </div>`;
       }).join('');
+
+      // show/hide "Voir plus"
+      const filteredCount = filtered.length;
+      const loadMoreBtn = $('#tx-load-more');
+      if(end < filteredCount){
+        loadMoreBtn.style.display = 'inline-block';
+      } else {
+        loadMoreBtn.style.display = 'none';
+      }
+
+      // wire action buttons (delegated)
+      document.querySelectorAll('[data-action]').forEach(btn => {
+        btn.onclick = (e) => {
+          const id = btn.getAttribute('data-id');
+          const act = btn.getAttribute('data-action');
+          if(act === 'view') viewTx(id);
+          if(act === 'approve') setStatus(id, 'approved');
+          if(act === 'reject') setStatus(id, 'rejected');
+        };
+      });
     }
+
+    function renderStatusChip(status){
+      const s = String(status || '').toLowerCase();
+      if(s === 'approved') return `<span class="status-chip status-approved">${escapeHtml(status)}</span>`;
+      if(s === 'rejected') return `<span class="status-chip status-rejected">${escapeHtml(status)}</span>`;
+      return `<span class="status-chip status-pending">${escapeHtml(status || 'pending')}</span>`;
+    }
+
+    // "Voir plus" handler - advance page and render
+    $('#tx-load-more').addEventListener('click', () => {
+      txPage++;
+      renderTransactionsPage(true);
+    });
+
+    // filter transactions realtime
+    txFilter.addEventListener('input', () => { txPage = 0; renderTransactionsPage(); });
 
     // escape
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-    // transaction detail modal (admin)
+    /* ---------------------------
+       Transaction modal (readable)
+       --------------------------- */
     window.viewTx = async function(id){
       try {
         const res = await authFetch('/admin/transactions/' + id);
-        const tx = res.ok ? await res.json() : null;
+        if(!res.ok) throw new Error('Impossible de charger transaction');
+        const tx = await res.json();
+
         const modal = document.createElement('div'); modal.className='modal';
         const box = document.createElement('div'); box.className='box';
         box.style.maxWidth='720px';
-        box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><h3>Détails transaction</h3><button class="btn ghost" id="close-x">Fermer</button></div>
-          <pre style="white-space:pre-wrap;margin-top:8px">${tx ? JSON.stringify(tx,null,2) : 'Détails indisponibles'}</pre>`;
+
+        // build user info block
+        let userHtml = '<div class="tiny muted">Guest</div>';
+        if(tx.user){
+          const u = tx.user.username || tx.user.email || '';
+          userHtml = `<div><strong>${escapeHtml(u)}</strong><div class="tiny muted">${escapeHtml(tx.user.email||'')}</div></div>`;
+        }
+
+        // build details list (object -> readable)
+        const det = tx.details || {};
+        let detHtml = '';
+        if(Object.keys(det).length === 0){
+          detHtml = '<div class="small muted">Aucun détail fourni</div>';
+        } else {
+          detHtml = '<dl class="details">';
+          for(const k of Object.keys(det)){
+            const val = det[k] === null || typeof det[k] === 'undefined' ? '' : String(det[k]);
+            // preserve possible <br> that may be stored in values by admin
+            const safeVal = escapeHtml(val).replace(/\n/g,'<br>').replace(/&lt;br&gt;/g, '<br>');
+            detHtml += `<dt>${escapeHtml(k)}</dt><dd>${safeVal}</dd>`;
+          }
+          detHtml += '</dl>';
+        }
+
+        box.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3>Détails transaction</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="modal-status-select" style="padding:6px;border-radius:8px;border:1px solid var(--border)">
+                <option value="pending">pending</option>
+                <option value="approved">approved</option>
+                <option value="rejected">rejected</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+              <button class="btn" id="modal-save-status">Enregistrer</button>
+              <button class="btn ghost" id="close-x">Fermer</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:12px;margin-top:10px">
+            <div style="flex:1">
+              <div class="kv"><div class="col">${userHtml}</div><div class="col tiny muted">${new Date(tx.createdAt).toLocaleString()}</div></div>
+              <div style="margin-top:8px"><strong>Pair:</strong> ${escapeHtml((tx.from||'') + ' → ' + (tx.to||''))}</div>
+              <div style="margin-top:6px"><strong>Type:</strong> ${escapeHtml(tx.type||'')}</div>
+              <div style="margin-top:6px"><strong>Montant:</strong> ${escapeHtml(String(tx.amountFrom||''))} → <strong>${escapeHtml(String(tx.amountTo||''))}</strong></div>
+              <div style="margin-top:8px">${renderStatusChip(tx.status)}</div>
+            </div>
+          </div>
+
+          <div class="details" style="margin-top:12px">
+            <h4>Détails fournis</h4>
+            ${detHtml}
+          </div>
+        `;
+
         modal.appendChild(box); document.body.appendChild(modal);
         box.querySelector('#close-x').onclick = ()=> modal.remove();
         modal.onclick = (e)=> { if(e.target === modal) modal.remove(); };
+
+        // set status select to current
+        const sel = box.querySelector('#modal-status-select');
+        if(sel) sel.value = tx.status || 'pending';
+
+        box.querySelector('#modal-save-status').onclick = async () => {
+          const newStatus = sel.value;
+          if(!confirm('Confirmer la mise à jour du statut ?')) return;
+          try {
+            const resp = await authFetch(`/admin/transactions/${tx._1d}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status: newStatus }) });
+            // Note: keep using tx._id; some older DB docs may use different keys but tx._id is standard
+            const body = await resp.json();
+            if(resp.ok && body.success){ toast('Statut mis à jour'); loadTransactions(); modal.remove(); }
+            else { toast('Erreur mise à jour', false); console.error(body); }
+          } catch(e){ console.error(e); toast('Erreur', false); }
+        };
+
       } catch(e){ console.error(e); toast('Erreur chargement détail', false); }
     };
 
-    // setStatus (admin)
+    /* ---------------------------
+       setStatus (admin)
+       --------------------------- */
     window.setStatus = async function(id, status){
       if(!confirm('Confirmer la mise à jour du statut ?')) return;
       try {
@@ -350,7 +578,9 @@ async function uploadFileToServer(file){
       } catch(e){ console.error(e); toast('Erreur', false); }
     };
 
-    // NEWS logic
+    /* ---------------------------
+       NEWS logic (with \n -> <br> handling)
+       --------------------------- */
     nFile.addEventListener('change', () => {
       const f = nFile.files[0];
       if(!f){ nPreview.style.display='none'; nPreview.src=''; return; }
@@ -365,6 +595,17 @@ async function uploadFileToServer(file){
     }
     clearBtn.addEventListener('click', clearNewsForm);
 
+    // helper to convert textarea text -> HTML (preserve line breaks)
+    function textToHtmlWithBr(text){
+      if(!text) return '';
+      return String(text).replace(/\r\n/g,'\n').replace(/\n/g, '<br>');
+    }
+    // helper to convert stored HTML with <br> back to textarea text
+    function htmlBrToText(html){
+      if(!html) return '';
+      return String(html).replace(/<br\s*\/?>/gi, '\n');
+    }
+
     publishBtn.addEventListener('click', async () => {
       const title = nTitle.value.trim(); if(!title){ alert('Titre requis'); return; }
       publishBtn.disabled = true; publishStatus.innerText = 'Publication...';
@@ -374,7 +615,14 @@ async function uploadFileToServer(file){
           const up = await uploadFileToServer(nFile.files[0]);
           imageUrl = up.url; publicId = up.public_id;
         }
-        const body = { title, description: nDesc.value.trim(), content: nContent.value.trim(), image: imageUrl, image_public_id: publicId };
+        // transform newlines to <br> before sending so stored content will render as HTML with line breaks
+        const body = {
+          title,
+          description: textToHtmlWithBr(nDesc.value.trim()),
+          content: textToHtmlWithBr(nContent.value.trim()),
+          image: imageUrl,
+          image_public_id: publicId
+        };
         const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
         const j = await res.json();
         if(res.ok && j.success){ toast('Publication réussie'); clearNewsForm(); loadNews(); } else { toast('Erreur publication', false); console.error(j); alert(j.message || 'Erreur'); }
@@ -386,7 +634,11 @@ async function uploadFileToServer(file){
     window.editNews = function(id){
       const found = window.__newsCache && window.__newsCache.find(n => n._id === id);
       if(!found) return alert('News introuvable');
-      nId.value = found._id; nTitle.value = found.title || ''; nDesc.value = found.description || ''; nContent.value = found.content || '';
+      nId.value = found._id;
+      nTitle.value = found.title || '';
+      // convert stored HTML (<br>) back to textarea text
+      nDesc.value = htmlBrToText(found.description || '');
+      nContent.value = htmlBrToText(found.content || '');
       if(found.image){ nPreview.src = found.image; nPreview.style.display = 'block'; }
       publishBtn.style.display='none'; updateBtn.style.display='inline-block';
       window.scrollTo({ top: 140, behavior: 'smooth' });
@@ -398,7 +650,14 @@ async function uploadFileToServer(file){
       try {
         let imageUrl = '', publicId = '';
         if(nFile.files && nFile.files[0]){ const up = await uploadFileToServer(nFile.files[0]); imageUrl = up.url; publicId = up.public_id; }
-        const body = { id, title: nTitle.value.trim(), description: nDesc.value.trim(), content: nContent.value.trim(), image: imageUrl, image_public_id: publicId };
+        const body = {
+          id,
+          title: nTitle.value.trim(),
+          description: textToHtmlWithBr(nDesc.value.trim()),
+          content: textToHtmlWithBr(nContent.value.trim()),
+          image: imageUrl,
+          image_public_id: publicId
+        };
         const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
         const j = await res.json();
         if(res.ok && j.success){ toast('Modification réussie'); clearNewsForm(); loadNews(); } else { toast('Erreur', false); console.error(j); alert(j.message || 'Erreur'); }
@@ -408,6 +667,7 @@ async function uploadFileToServer(file){
 
     // delete news
     window.deleteNews = async function(id){
+      if(!id){ toast('ID news invalide', false); return; }
       if(!confirm('Supprimer cette news ?')) return;
       try {
         const res = await authFetch('/admin/news/' + id, { method:'DELETE' });
@@ -429,32 +689,56 @@ async function uploadFileToServer(file){
 
     function renderNewsList(news){
       if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
-      newsList.innerHTML = news.map(n => `
+      // news.description/content may contain <br> (we accept HTML). We sanitize title but allow description/content as HTML (converted earlier from textarea).
+      newsList.innerHTML = news.map(n => {
+        // protect against missing id
+        const nid = n && (n._id || n.id || '');
+        const deleteBtn = nid ? `<button class="btn ghost" onclick="deleteNews('${nid}')">Supprimer</button>` : `<button class="btn ghost" disabled>Supprimer</button>`;
+        const editBtn = nid ? `<button class="btn" onclick="editNews('${nid}')">Modifier</button>` : `<button class="btn" disabled>Modifier</button>`;
+        return `
         <div class="news-item">
           ${n.image ? `<img class="news-thumb" src="${n.image}" alt="">` : `<div class="news-thumb"></div>`}
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <div><strong>${escapeHtml(n.title)}</strong><div class="tiny muted" style="margin-top:4px">${escapeHtml(n.description || '')}</div></div>
-              <div class="tiny muted">${new Date(n.date).toLocaleString()}</div>
+              <div>
+                <strong>${escapeHtml(n.title)}</strong>
+                <div class="tiny muted" style="margin-top:4px">${n.description ? String(n.description) : ''}</div>
+              </div>
+              <div class="tiny muted">${new Date(n.date || n.createdAt || Date.now()).toLocaleString()}</div>
             </div>
+            <div style="margin-top:8px;color:var(--text)">${n.content ? String(n.content) : ''}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:8px">
-            <button class="btn" onclick="editNews('${n._id}')">Modifier</button>
-            <button class="btn ghost" onclick="deleteNews('${n._id}')">Supprimer</button>
+            ${editBtn}
+            ${deleteBtn}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
-    // rates logic
+    /* ---------------------------
+       RATE logic + search
+       --------------------------- */
+    let ratesCache = [];
     async function loadRates(){
       try {
         const res = await fetch('/api/rates');
         const rates = await res.json();
-        if(!rates || !rates.length){ ratesList.innerHTML = '<div class="tiny muted">Aucun taux</div>'; return; }
-        ratesList.innerHTML = rates.map(r => `<div style="display:flex;justify-content:space-between"><div><strong>${r.pair}</strong><div class="tiny muted">${r.desc||''}</div></div><div><strong>${r.rate}</strong></div></div>`).join('');
-      } catch(e){ console.error(e); ratesList.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; }
+        ratesCache = Array.isArray(rates) ? rates : [];
+        renderRatesList(ratesCache);
+      } catch (e){ console.error(e); ratesList.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; }
     }
+
+    function renderRatesList(list){
+      const q = ratesFilter.value.trim().toLowerCase();
+      const filtered = list.filter(r => !q || r.pair.toLowerCase().includes(q) || String(r.rate).toLowerCase().includes(q));
+      if(!filtered || filtered.length === 0){ ratesList.innerHTML = '<div class="tiny muted">Aucun taux</div>'; return; }
+      ratesList.innerHTML = filtered.map(r => `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${escapeHtml(r.pair)}</strong><div class="tiny muted">${escapeHtml(r.desc||'')}</div></div><div><strong>${escapeHtml(String(r.rate))}</strong></div></div>`).join('');
+    }
+
+    ratesFilter.addEventListener('input', ()=> renderRatesList(ratesCache));
+    ratesRefreshBtn.addEventListener('click', ()=> loadRates());
 
     rAdd.addEventListener('click', async () => {
       const pair = rPair.value.trim(); const rate = parseFloat(rValue.value);
@@ -466,11 +750,130 @@ async function uploadFileToServer(file){
       } catch(e){ console.error(e); toast('Erreur', false); }
     });
 
-    // helpers bindings
-    txFilter.addEventListener('input', loadTransactions);
-    btnRefreshTx.addEventListener('click', loadTransactions);
-    btnLoadNews.addEventListener('click', loadNews);
-    btnSeed.addEventListener('click', async () => {
+    /* ---------------------------
+       PAYMENTS management (admin)
+       --------------------------- */
+    let paymentsCache = [];
+
+    async function loadPayments(){
+      try {
+        const res = await authFetch('/admin/payment-methods');
+        if(!res.ok) throw new Error('Impossible de charger paiements');
+        const body = await res.json();
+        if(!body || !body.success) { pmListEl.innerHTML = '<div class="tiny muted">Aucune méthode</div>'; paymentsCache = []; return; }
+        paymentsCache = Array.isArray(body.methods) ? body.methods : [];
+        renderPayments();
+      } catch (e) {
+        console.error(e); pmListEl.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; paymentsCache = [];
+      }
+    }
+
+    function renderPayments(){
+      const q = pmSearch.value.trim().toLowerCase();
+      const filtered = paymentsCache.filter(p => {
+        if(!q) return true;
+        return (p.name||'').toLowerCase().includes(q) || (p.network||'').toLowerCase().includes(q);
+      });
+      if(!filtered || filtered.length === 0){ pmListEl.innerHTML = '<div class="tiny muted">Aucune méthode</div>'; return; }
+
+      pmListEl.innerHTML = filtered.map(p => {
+        const n = p.network ? ` (${escapeHtml(p.network)})` : '';
+        const details = p.details ? `<div class="meta">${escapeHtml(p.details)}</div>` : '';
+        return `<div class="payment-item">
+          <div>
+            <div><strong>${escapeHtml(p.name)}</strong>${n} ${p.active ? '<span class="tiny" style="margin-left:8px;color:green">● actif</span>' : '<span class="tiny" style="margin-left:8px;color:#999">● inactif</span>'}</div>
+            ${details}
+          </div>
+          <div class="actions">
+            <button class="btn" data-id="${p._id}" data-action="edit-pm">Modifier</button>
+            <button class="btn ghost" data-id="${p._id}" data-action="delete-pm">Supprimer</button>
+          </div>
+        </div>`;
+      }).join('');
+
+      // wire buttons
+      pmListEl.querySelectorAll('[data-action]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute('data-id');
+          const act = btn.getAttribute('data-action');
+          if(act === 'edit-pm') return fillPaymentForm(id);
+          if(act === 'delete-pm') return deletePaymentMethod(id);
+        };
+      });
+    }
+
+    function fillPaymentForm(id){
+      const found = paymentsCache.find(p => String(p._id) === String(id));
+      if(!found) return toast('Méthode introuvable', false);
+      pmId.value = found._id;
+      pmName.value = found.name || '';
+      pmType.value = found.type || 'fiat';
+      pmNetwork.value = found.network || '';
+      pmDetails.value = found.details || '';
+      pmActive.checked = !!found.active;
+      pmName.focus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function clearPaymentForm(){
+      pmId.value = ''; pmName.value=''; pmType.value='fiat'; pmNetwork.value=''; pmDetails.value=''; pmActive.checked=true;
+    }
+
+    pmClear.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearPaymentForm();
+    });
+
+    pmSave.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const id = pmId.value || null;
+      const name = pmName.value.trim();
+      const type = pmType.value;
+      const network = pmNetwork.value.trim();
+      const details = pmDetails.value.trim();
+      const active = !!pmActive.checked;
+      if(!name) return alert('Nom requis');
+      try {
+        const payload = { id, name, type, network, details, active };
+        const res = await authFetch('/admin/payment-methods', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+        const j = await res.json();
+        if(res.ok && j.success){
+          toast('Méthode enregistrée');
+          clearPaymentForm();
+          loadPayments();
+        } else {
+          console.error(j);
+          toast('Erreur sauvegarde', false);
+        }
+      } catch (err) {
+        console.error(err);
+        toast('Erreur serveur', false);
+      }
+    });
+
+    async function deletePaymentMethod(id){
+      if(!confirm('Supprimer cette méthode de paiement ?')) return;
+      try {
+        const res = await authFetch('/admin/payment-methods/' + id, { method:'DELETE' });
+        const j = await res.json();
+        if(res.ok && j.success){
+          toast('Méthode supprimée');
+          loadPayments();
+        } else { toast('Erreur suppression', false); console.error(j); }
+      } catch(e){ console.error(e); toast('Erreur', false); }
+    }
+
+    pmRefresh.addEventListener('click', () => { loadPayments(); });
+
+    pmSearch.addEventListener('input', () => renderPayments());
+
+    /* ---------------------------
+       helpers / bindings
+       --------------------------- */
+    $('#btn-logout').addEventListener('click', ()=> { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href='/login_admin'; });
+
+    $('#btn-load-news').addEventListener('click', loadNews);
+    $('#btn-seed-sample').addEventListener('click', async () => {
       if(!confirm('Créer une news test ?')) return;
       try {
         const body = { title: 'News test ' + new Date().toLocaleTimeString(), description:'sample', content:'contenu sample' };
@@ -479,13 +882,26 @@ async function uploadFileToServer(file){
         if(res.ok && j.success){ toast('Seed OK'); loadNews(); } else { toast('Erreur seed', false); console.error(j); }
       } catch(e){ console.error(e); toast('Erreur', false); }
     });
-    btnRefresh.addEventListener('click', ()=> { loadNews(); loadRates(); });
-    $('#btn-logout').addEventListener('click', ()=> { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href='/login_admin'; });
+
+    // Extend 'btn-refresh' to include payments
+    $('#btn-refresh').addEventListener('click', ()=> { loadNews(); loadRates(); loadPayments(); });
+    $('#btn-refresh-tx').addEventListener('click', ()=> { loadTransactions(); });
+
+    // nav buttons scroll
+    document.querySelectorAll('.admin-top-nav .nav-btn').forEach(b => {
+      b.addEventListener('click', (e) => {
+        document.querySelectorAll('.admin-top-nav .nav-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const t = b.getAttribute('data-target');
+        const el = document.getElementById(t);
+        if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+      });
+    });
 
     // initial load
-    loadTransactions(); loadNews(); loadRates();
+    loadTransactions(); loadNews(); loadRates(); loadPayments();
 
-    // Expose functions for inline buttons
+    // Expose functions for inline buttons (backwards compatibility)
     window.editNews = editNews; window.deleteNews = deleteNews; window.viewTx = viewTx; window.setStatus = setStatus;
   })();
   </script>

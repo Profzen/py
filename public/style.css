@@ -141,3 +141,4 @@ label{font-weight:700;color:var(--text);display:block;margin-top:12px}
 @media (max-width:720px){
   .tx-wrap table { min-width:900px; } /* force scroll horizontal si nécessaire */
 }
+
