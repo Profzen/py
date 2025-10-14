@@ -6,6 +6,12 @@
   <title>Admin — PY Crypto</title>
   <link rel="stylesheet" href="/style.css">
   <style>
+    /* GLOBAL FIXES -> remove horizontal scroll, safety sizing */
+    html,body{height:100%;margin:0;padding:0;overflow-x:hidden;box-sizing:border-box}
+    *,*::before,*::after{box-sizing:inherit}
+    img{max-width:100%;height:auto;display:block}
+    input,textarea,select,button{max-width:100%;box-sizing:border-box}
+
     /* ===== Admin additions (kept in same theme) ===== */
     :root{
       --admin-card-bg: #ffffff;
@@ -41,7 +47,7 @@
 
     /* News editor & list */
     .two-col{display:grid;grid-template-columns:1fr 480px;gap:18px}
-    .card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)}
+    .card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
     .card h3{margin:0 0 8px}
     .form-row{display:flex;gap:8px}
     .form-row .col{flex:1}
@@ -93,9 +99,13 @@
       .news-thumb{width:72px;height:56px}
       .tx-card .row{flex-direction:column;align-items:flex-start}
       .payment-form-row{flex-direction:column}
+      /* prevent overflow from long text or inputs */
+      .card, .payment-item, .news-item { word-break: break-word; min-width:0; }
     }
 
     /* small improvements for modal content */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(12,18,24,0.45);z-index:20000;padding:18px}
+    .modal .box{background:#fff;border-radius:12px;padding:16px;max-height:92vh;overflow:auto;box-shadow:0 18px 50px rgba(8,30,50,0.2);width:100%;max-width:900px}
     .modal .box .kv{display:flex;justify-content:space-between;gap:12px}
     .modal .box .kv .col{flex:1}
     .modal .box .details{margin-top:10px;border-top:1px dashed var(--border);padding-top:10px}
@@ -105,6 +115,9 @@
     .status-pending{background:#fff4e6;color:#a66a00;border:1px solid #ffe3b8}
     .status-approved{background:#e9fff2;color:#0b7b3b;border:1px solid #bff0c9}
     .status-rejected{background:#ffecec;color:#a22b2b;border:1px solid #ffc9c9}
+
+    /* small UI tweaks to avoid horizontal overflow */
+    .admin-container, .card, form, .payment-item { width:100%; min-width:0; }
   </style>
 </head>
 <body>
@@ -281,13 +294,11 @@
   <script>
   /* ===================
      admin front JS (updated)
-     - Based strictly on your original file, with enhancements:
-        * top nav (scroll to sections)
-        * rates search
-        * transactions pagination (10 per page) + "Voir plus"
-        * improved transaction modal (readable, change status inside modal)
-        * news: convert newlines -> <br> before sending; when editing convert <br> back -> \n
-        * responsive tweaks and Payments CRUD integrated
+     - fixes:
+       * modal status update used wrong id -> now uses tx._id or tx.id fallback
+       * delegated event binding for payments/news actions (immediate and robust)
+       * removed horizontal scroll on mobile + overflow handling
+       * extra guards for missing ids and better logging
      - endpoints used: /admin/upload, /admin/news, /admin/transactions, /admin/transactions/:id, /admin/transactions/:id/status, /api/rates, /admin/payment-methods, /api/payments
      =================== */
 
@@ -337,29 +348,20 @@
     const pmSave = $('#pm-save'), pmClear = $('#pm-clear');
 
     // Upload helper (POST /admin/upload)
-    // uploadFileToServer : renvoie { url, public_id } ou lance une erreur
     async function uploadFileToServer(file){
       if(!file) return null;
       const fd = new FormData();
       fd.append('file', file);
-
       const token = localStorage.getItem('token');
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-
       const res = await fetch('/admin/upload', { method: 'POST', headers, body: fd });
       const text = await res.text();
-      // essayer parser JSON proprement
       let json;
-      try { json = JSON.parse(text); } catch(e) {
-        // server returned non-json (html) -> throw with body snippet
-        throw new Error('Upload failed (non-JSON response): ' + (text || '(empty)'));
-      }
-
+      try { json = JSON.parse(text); } catch(e) { throw new Error('Upload failed (non-JSON response): ' + (text || '(empty)')); }
       if(!res.ok || !json.success){
         const errText = (json.error && (typeof json.error === 'string' ? json.error : (json.error.message||JSON.stringify(json.error)))) || json.message || ('status ' + res.status);
-        throw new Error('Upload failed: ' + JSON.stringify({ success: json.success, message: json.message, error: errText }));
+        throw new Error('Upload failed: ' + errText);
       }
-
       return { url: json.url, public_id: json.public_id || null };
     }
 
@@ -370,7 +372,6 @@
     let txPage = 0;
     const TX_PAGE_SIZE = 10;
 
-    // Load transactions from server (cached)
     async function loadTransactions(){
       try {
         const res = await authFetch('/admin/transactions');
@@ -384,7 +385,6 @@
       }
     }
 
-    // Render current page (append mode for Voir plus)
     function renderTransactionsPage(append=false){
       const q = txFilter.value.trim().toLowerCase();
       const filtered = transactionsCache.filter(t => {
@@ -393,7 +393,6 @@
         return String(u).toLowerCase().includes(q) || String(t.status||'').toLowerCase().includes(q) || ((t.from||'') + ' ' + (t.to||'')).toLowerCase().includes(q);
       });
 
-      const start = 0;
       const end = (txPage + 1) * TX_PAGE_SIZE;
       const pageItems = filtered.slice(0, end);
 
@@ -403,7 +402,8 @@
       } else {
         txTbody.innerHTML = pageItems.map(t => {
           const u = t.user ? (t.user.username || t.user.email) : 'Guest';
-          return `<tr>
+          const id = t._id || t.id || '';
+          return `<tr data-txid="${escapeHtml(id)}">
             <td>${new Date(t.createdAt).toLocaleString()}</td>
             <td>${escapeHtml(u)}</td>
             <td>${escapeHtml(t.type||'')}</td>
@@ -413,9 +413,9 @@
             <td>${renderStatusChip(t.status||'')}</td>
             <td>
               <div class="actions">
-                <button class="btn ghost" data-id="${t._id}" data-action="view">Voir</button>
-                <button class="btn" data-id="${t._id}" data-action="approve">Valider</button>
-                <button class="btn ghost" data-id="${t._id}" data-action="reject">Rejeter</button>
+                <button class="btn ghost" data-id="${id}" data-action="view">Voir</button>
+                <button class="btn" data-id="${id}" data-action="approve">Valider</button>
+                <button class="btn ghost" data-id="${id}" data-action="reject">Rejeter</button>
               </div>
             </td>
           </tr>`; }).join('');
@@ -424,14 +424,15 @@
       // cards (mobile)
       txCards.innerHTML = pageItems.map(t => {
         const u = t.user ? (t.user.username || t.user.email) : 'Guest';
-        return `<div class="tx-card">
+        const id = t._id || t.id || '';
+        return `<div class="tx-card" data-txid="${escapeHtml(id)}">
           <div class="row"><strong>${escapeHtml(u)}</strong><span class="tiny muted">${new Date(t.createdAt).toLocaleString()}</span></div>
           <div class="row"><span>Pair: <strong>${escapeHtml((t.from||'') + '→' + (t.to||''))}</strong></span><span>Status: <strong>${escapeHtml(t.status||'')}</strong></span></div>
           <div class="row"><span>Montant: ${escapeHtml(String(t.amountFrom||''))}</span><span>Reçu: ${escapeHtml(String(t.amountTo||''))}</span></div>
           <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn ghost" data-id="${t._id}" data-action="view">Voir</button>
-            <button class="btn" data-id="${t._id}" data-action="approve">Valider</button>
-            <button class="btn ghost" data-id="${t._id}" data-action="reject">Rejeter</button>
+            <button class="btn ghost" data-id="${id}" data-action="view">Voir</button>
+            <button class="btn" data-id="${id}" data-action="approve">Valider</button>
+            <button class="btn ghost" data-id="${id}" data-action="reject">Rejeter</button>
           </div>
         </div>`;
       }).join('');
@@ -444,18 +445,19 @@
       } else {
         loadMoreBtn.style.display = 'none';
       }
-
-      // wire action buttons (delegated)
-      document.querySelectorAll('[data-action]').forEach(btn => {
-        btn.onclick = (e) => {
-          const id = btn.getAttribute('data-id');
-          const act = btn.getAttribute('data-action');
-          if(act === 'view') viewTx(id);
-          if(act === 'approve') setStatus(id, 'approved');
-          if(act === 'reject') setStatus(id, 'rejected');
-        };
-      });
     }
+
+    // delegate tx actions (works for both table and cards)
+    document.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-action]');
+      if(!btn) return;
+      const id = btn.getAttribute('data-id');
+      const act = btn.getAttribute('data-action');
+      if(!id) return toast('ID transaction introuvable', false);
+      if(act === 'view') return viewTx(id);
+      if(act === 'approve') return setStatus(id, 'approved');
+      if(act === 'reject') return setStatus(id, 'rejected');
+    });
 
     function renderStatusChip(status){
       const s = String(status || '').toLowerCase();
@@ -464,32 +466,34 @@
       return `<span class="status-chip status-pending">${escapeHtml(status || 'pending')}</span>`;
     }
 
-    // "Voir plus" handler - advance page and render
+    // "Voir plus" handler
     $('#tx-load-more').addEventListener('click', () => {
       txPage++;
       renderTransactionsPage(true);
     });
 
-    // filter transactions realtime
     txFilter.addEventListener('input', () => { txPage = 0; renderTransactionsPage(); });
 
     // escape
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
     /* ---------------------------
-       Transaction modal (readable)
+       Transaction modal (readable) + status update fix
        --------------------------- */
     window.viewTx = async function(id){
       try {
         const res = await authFetch('/admin/transactions/' + id);
-        if(!res.ok) throw new Error('Impossible de charger transaction');
+        if(!res.ok) {
+          const txt = await res.text().catch(()=>null);
+          throw new Error('Impossible de charger transaction: ' + (txt||res.status));
+        }
         const tx = await res.json();
 
         const modal = document.createElement('div'); modal.className='modal';
         const box = document.createElement('div'); box.className='box';
         box.style.maxWidth='720px';
 
-        // build user info block
+        // build user html
         let userHtml = '<div class="tiny muted">Guest</div>';
         if(tx.user){
           const u = tx.user.username || tx.user.email || '';
@@ -505,12 +509,14 @@
           detHtml = '<dl class="details">';
           for(const k of Object.keys(det)){
             const val = det[k] === null || typeof det[k] === 'undefined' ? '' : String(det[k]);
-            // preserve possible <br> that may be stored in values by admin
             const safeVal = escapeHtml(val).replace(/\n/g,'<br>').replace(/&lt;br&gt;/g, '<br>');
             detHtml += `<dt>${escapeHtml(k)}</dt><dd>${safeVal}</dd>`;
           }
           detHtml += '</dl>';
         }
+
+        // ensure we have an id to use
+        const txId = tx._id || tx.id || id;
 
         box.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center">
@@ -554,32 +560,34 @@
         box.querySelector('#modal-save-status').onclick = async () => {
           const newStatus = sel.value;
           if(!confirm('Confirmer la mise à jour du statut ?')) return;
+          if(!txId){ toast('ID transaction introuvable', false); return; }
           try {
-            const resp = await authFetch(`/admin/transactions/${tx._1d}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status: newStatus }) });
-            // Note: keep using tx._id; some older DB docs may use different keys but tx._id is standard
-            const body = await resp.json();
-            if(resp.ok && body.success){ toast('Statut mis à jour'); loadTransactions(); modal.remove(); }
-            else { toast('Erreur mise à jour', false); console.error(body); }
+            const resp = await authFetch(`/admin/transactions/${txId}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status: newStatus }) });
+            const body = await resp.json().catch(()=>null);
+            if(resp.ok && body && body.success){ toast('Statut mis à jour'); loadTransactions(); modal.remove(); }
+            else { console.error('status update failed', resp, body); toast('Erreur mise à jour', false); }
           } catch(e){ console.error(e); toast('Erreur', false); }
         };
 
-      } catch(e){ console.error(e); toast('Erreur chargement détail', false); }
+      } catch(e){ console.error('viewTx err', e); toast('Erreur chargement détail', false); }
     };
 
     /* ---------------------------
-       setStatus (admin)
+       setStatus shortcut (admin)
        --------------------------- */
     window.setStatus = async function(id, status){
       if(!confirm('Confirmer la mise à jour du statut ?')) return;
+      if(!id){ toast('ID transaction introuvable', false); return; }
       try {
         const res = await authFetch(`/admin/transactions/${id}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status }) });
-        const body = await res.json();
-        if(res.ok && body.success){ toast('Statut mis à jour'); loadTransactions(); } else { toast('Erreur', false); console.error(body); }
+        const body = await res.json().catch(()=>null);
+        if(res.ok && body && body.success){ toast('Statut mis à jour'); loadTransactions(); } else { console.error('setStatus failed', res, body); toast('Erreur', false); }
       } catch(e){ console.error(e); toast('Erreur', false); }
     };
 
     /* ---------------------------
        NEWS logic (with \n -> <br> handling)
+       - use delegated events for edit/delete to avoid race conditions
        --------------------------- */
     nFile.addEventListener('change', () => {
       const f = nFile.files[0];
@@ -595,12 +603,10 @@
     }
     clearBtn.addEventListener('click', clearNewsForm);
 
-    // helper to convert textarea text -> HTML (preserve line breaks)
     function textToHtmlWithBr(text){
       if(!text) return '';
       return String(text).replace(/\r\n/g,'\n').replace(/\n/g, '<br>');
     }
-    // helper to convert stored HTML with <br> back to textarea text
     function htmlBrToText(html){
       if(!html) return '';
       return String(html).replace(/<br\s*\/?>/gi, '\n');
@@ -615,7 +621,6 @@
           const up = await uploadFileToServer(nFile.files[0]);
           imageUrl = up.url; publicId = up.public_id;
         }
-        // transform newlines to <br> before sending so stored content will render as HTML with line breaks
         const body = {
           title,
           description: textToHtmlWithBr(nDesc.value.trim()),
@@ -624,19 +629,18 @@
           image_public_id: publicId
         };
         const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-        const j = await res.json();
-        if(res.ok && j.success){ toast('Publication réussie'); clearNewsForm(); loadNews(); } else { toast('Erreur publication', false); console.error(j); alert(j.message || 'Erreur'); }
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){ toast('Publication réussie'); clearNewsForm(); loadNews(); } else { console.error('publish failed', res, j); toast('Erreur publication', false); alert((j && j.message) || 'Erreur'); }
       } catch(err){ console.error(err); toast('Erreur upload/publication', false); alert(String(err)); }
       finally{ publishBtn.disabled=false; publishStatus.innerText=''; }
     });
 
-    // edit / update
+    // update
     window.editNews = function(id){
-      const found = window.__newsCache && window.__newsCache.find(n => n._id === id);
+      const found = window.__newsCache && window.__newsCache.find(n => (n._id === id || n.id === id));
       if(!found) return alert('News introuvable');
-      nId.value = found._id;
+      nId.value = found._id || found.id || '';
       nTitle.value = found.title || '';
-      // convert stored HTML (<br>) back to textarea text
       nDesc.value = htmlBrToText(found.description || '');
       nContent.value = htmlBrToText(found.content || '');
       if(found.image){ nPreview.src = found.image; nPreview.style.display = 'block'; }
@@ -659,62 +663,73 @@
           image_public_id: publicId
         };
         const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-        const j = await res.json();
-        if(res.ok && j.success){ toast('Modification réussie'); clearNewsForm(); loadNews(); } else { toast('Erreur', false); console.error(j); alert(j.message || 'Erreur'); }
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){ toast('Modification réussie'); clearNewsForm(); loadNews(); } else { console.error('update failed', res, j); toast('Erreur', false); alert((j && j.message) || 'Erreur'); }
       } catch(e){ console.error(e); toast('Erreur update', false); }
       finally{ updateBtn.disabled=false; publishStatus.innerText=''; }
     });
 
-    // delete news
-    window.deleteNews = async function(id){
+    // delegated news actions (edit/delete) using data-id to avoid inline onclick issues
+    // renderNewsList will place elements with data attributes; here we bind high-level delegation to news-list container
+    function renderNewsList(news){
+      if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
+      window.__newsCache = news;
+      newsList.innerHTML = news.map(n => {
+        const nid = (n._id || n.id || '');
+        const when = new Date(n.date || n.createdAt || Date.now()).toLocaleString();
+        return `
+          <div class="news-item" data-id="${escapeHtml(nid)}">
+            ${n.image ? `<img class="news-thumb" src="${escapeHtml(n.image)}" alt="">` : `<div class="news-thumb"></div>`}
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="min-width:0">
+                  <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(n.title)}</strong>
+                  <div class="tiny muted" style="margin-top:4px;white-space:normal">${n.description ? String(n.description) : ''}</div>
+                </div>
+                <div class="tiny muted" style="margin-left:12px">${when}</div>
+              </div>
+              <div style="margin-top:8px;color:var(--text);white-space:pre-wrap">${n.content ? String(n.content) : ''}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn" data-news-id="${escapeHtml(nid)}" data-news-action="edit">Modifier</button>
+              <button class="btn ghost" data-news-id="${escapeHtml(nid)}" data-news-action="delete">Supprimer</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // delegate news edit/delete clicks
+    newsList.addEventListener('click', (ev) => {
+      const editBtn = ev.target.closest('[data-news-action]');
+      if(!editBtn) return;
+      const action = editBtn.getAttribute('data-news-action');
+      const id = editBtn.getAttribute('data-news-id');
+      if(!id) { toast('ID news introuvable', false); return; }
+      if(action === 'edit') return editNews(id);
+      if(action === 'delete') {
+        if(!confirm('Supprimer cette news ?')) return;
+        deleteNews(id);
+      }
+    });
+
+    // deleteNews uses id; guard if missing
+    async function deleteNews(id){
       if(!id){ toast('ID news invalide', false); return; }
-      if(!confirm('Supprimer cette news ?')) return;
       try {
         const res = await authFetch('/admin/news/' + id, { method:'DELETE' });
-        const j = await res.json();
-        if(res.ok && j.success){ toast('Suppression réussie'); loadNews(); } else { toast('Erreur suppression', false); console.error(j); alert(j.message || 'Erreur'); }
-      } catch(e){ console.error(e); toast('Erreur suppression', false); }
-    };
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){ toast('Suppression réussie'); loadNews(); } else { console.error('deleteNews failed', res, j); toast('Erreur suppression', false); alert((j && j.message) || 'Erreur'); }
+      } catch(e){ console.error('deleteNews err', e); toast('Erreur suppression', false); }
+    }
 
-    // load news
     async function loadNews(){
       try {
         const res = await authFetch('/admin/news');
         if(!res.ok) throw new Error('Impossible de charger news');
         const news = await res.json();
-        window.__newsCache = news;
         renderNewsList(news);
       } catch(e){ console.error(e); newsList.innerHTML = '<div class="tiny muted">Erreur chargement news</div>'; }
-    }
-
-    function renderNewsList(news){
-      if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
-      // news.description/content may contain <br> (we accept HTML). We sanitize title but allow description/content as HTML (converted earlier from textarea).
-      newsList.innerHTML = news.map(n => {
-        // protect against missing id
-        const nid = n && (n._id || n.id || '');
-        const deleteBtn = nid ? `<button class="btn ghost" onclick="deleteNews('${nid}')">Supprimer</button>` : `<button class="btn ghost" disabled>Supprimer</button>`;
-        const editBtn = nid ? `<button class="btn" onclick="editNews('${nid}')">Modifier</button>` : `<button class="btn" disabled>Modifier</button>`;
-        return `
-        <div class="news-item">
-          ${n.image ? `<img class="news-thumb" src="${n.image}" alt="">` : `<div class="news-thumb"></div>`}
-          <div style="flex:1">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <div>
-                <strong>${escapeHtml(n.title)}</strong>
-                <div class="tiny muted" style="margin-top:4px">${n.description ? String(n.description) : ''}</div>
-              </div>
-              <div class="tiny muted">${new Date(n.date || n.createdAt || Date.now()).toLocaleString()}</div>
-            </div>
-            <div style="margin-top:8px;color:var(--text)">${n.content ? String(n.content) : ''}</div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            ${editBtn}
-            ${deleteBtn}
-          </div>
-        </div>
-      `;
-      }).join('');
     }
 
     /* ---------------------------
@@ -745,13 +760,14 @@
       if(!pair || isNaN(rate)) return alert('Pair et valeur requis');
       try {
         const res = await authFetch('/admin/rates', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ pair, rate }) });
-        const j = await res.json();
-        if(res.ok && j.success){ toast('Taux ajouté/modifié'); rPair.value=''; rValue.value=''; loadRates(); } else { toast('Erreur rates', false); console.error(j); }
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){ toast('Taux ajouté/modifié'); rPair.value=''; rValue.value=''; loadRates(); } else { console.error('rates add failed', res, j); toast('Erreur rates', false); }
       } catch(e){ console.error(e); toast('Erreur', false); }
     });
 
     /* ---------------------------
        PAYMENTS management (admin)
+       - use delegation to ensure buttons always work
        --------------------------- */
     let paymentsCache = [];
 
@@ -777,35 +793,37 @@
       if(!filtered || filtered.length === 0){ pmListEl.innerHTML = '<div class="tiny muted">Aucune méthode</div>'; return; }
 
       pmListEl.innerHTML = filtered.map(p => {
+        const id = p._id || p.id || '';
         const n = p.network ? ` (${escapeHtml(p.network)})` : '';
         const details = p.details ? `<div class="meta">${escapeHtml(p.details)}</div>` : '';
-        return `<div class="payment-item">
-          <div>
-            <div><strong>${escapeHtml(p.name)}</strong>${n} ${p.active ? '<span class="tiny" style="margin-left:8px;color:green">● actif</span>' : '<span class="tiny" style="margin-left:8px;color:#999">● inactif</span>'}</div>
+        return `<div class="payment-item" data-pmid="${escapeHtml(id)}">
+          <div style="min-width:0">
+            <div style="display:flex;align-items:center;gap:8px"><strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</strong>${n}${p.active ? '<span class="tiny" style="margin-left:8px;color:green">● actif</span>' : '<span class="tiny" style="margin-left:8px;color:#999">● inactif</span>'}</div>
             ${details}
           </div>
           <div class="actions">
-            <button class="btn" data-id="${p._id}" data-action="edit-pm">Modifier</button>
-            <button class="btn ghost" data-id="${p._id}" data-action="delete-pm">Supprimer</button>
+            <button class="btn" data-pm-id="${escapeHtml(id)}" data-pm-action="edit">Modifier</button>
+            <button class="btn ghost" data-pm-id="${escapeHtml(id)}" data-pm-action="delete">Supprimer</button>
           </div>
         </div>`;
       }).join('');
-
-      // wire buttons
-      pmListEl.querySelectorAll('[data-action]').forEach(btn => {
-        btn.onclick = async () => {
-          const id = btn.getAttribute('data-id');
-          const act = btn.getAttribute('data-action');
-          if(act === 'edit-pm') return fillPaymentForm(id);
-          if(act === 'delete-pm') return deletePaymentMethod(id);
-        };
-      });
     }
 
+    // delegate clicks inside pmListEl
+    pmListEl.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-pm-action]');
+      if(!btn) return;
+      const action = btn.getAttribute('data-pm-action');
+      const id = btn.getAttribute('data-pm-id');
+      if(!id){ toast('ID méthode introuvable', false); return; }
+      if(action === 'edit') return fillPaymentForm(id);
+      if(action === 'delete') return deletePaymentMethod(id);
+    });
+
     function fillPaymentForm(id){
-      const found = paymentsCache.find(p => String(p._id) === String(id));
+      const found = paymentsCache.find(p => String(p._id) === String(id) || String(p.id) === String(id));
       if(!found) return toast('Méthode introuvable', false);
-      pmId.value = found._id;
+      pmId.value = found._id || found.id || '';
       pmName.value = found.name || '';
       pmType.value = found.type || 'fiat';
       pmNetwork.value = found.network || '';
@@ -836,13 +854,13 @@
       try {
         const payload = { id, name, type, network, details, active };
         const res = await authFetch('/admin/payment-methods', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-        const j = await res.json();
-        if(res.ok && j.success){
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){
           toast('Méthode enregistrée');
           clearPaymentForm();
           loadPayments();
         } else {
-          console.error(j);
+          console.error('pm save failed', res, j);
           toast('Erreur sauvegarde', false);
         }
       } catch (err) {
@@ -852,34 +870,33 @@
     });
 
     async function deletePaymentMethod(id){
+      if(!id) { toast('ID méthode introuvable', false); return; }
       if(!confirm('Supprimer cette méthode de paiement ?')) return;
       try {
         const res = await authFetch('/admin/payment-methods/' + id, { method:'DELETE' });
-        const j = await res.json();
-        if(res.ok && j.success){
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){
           toast('Méthode supprimée');
           loadPayments();
-        } else { toast('Erreur suppression', false); console.error(j); }
+        } else { console.error('pm delete failed', res, j); toast('Erreur suppression', false); }
       } catch(e){ console.error(e); toast('Erreur', false); }
     }
 
     pmRefresh.addEventListener('click', () => { loadPayments(); });
-
     pmSearch.addEventListener('input', () => renderPayments());
 
     /* ---------------------------
        helpers / bindings
        --------------------------- */
     $('#btn-logout').addEventListener('click', ()=> { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href='/login_admin'; });
-
     $('#btn-load-news').addEventListener('click', loadNews);
     $('#btn-seed-sample').addEventListener('click', async () => {
       if(!confirm('Créer une news test ?')) return;
       try {
         const body = { title: 'News test ' + new Date().toLocaleTimeString(), description:'sample', content:'contenu sample' };
         const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-        const j = await res.json();
-        if(res.ok && j.success){ toast('Seed OK'); loadNews(); } else { toast('Erreur seed', false); console.error(j); }
+        const j = await res.json().catch(()=>null);
+        if(res.ok && j && j.success){ toast('Seed OK'); loadNews(); } else { toast('Erreur seed', false); console.error('seed failed', res, j); }
       } catch(e){ console.error(e); toast('Erreur', false); }
     });
 
@@ -901,7 +918,7 @@
     // initial load
     loadTransactions(); loadNews(); loadRates(); loadPayments();
 
-    // Expose functions for inline buttons (backwards compatibility)
+    // Expose functions for inline/backwards compatibility if needed
     window.editNews = editNews; window.deleteNews = deleteNews; window.viewTx = viewTx; window.setStatus = setStatus;
   })();
   </script>
