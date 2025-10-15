@@ -1,9 +1,10 @@
 // routes/admin.js
-// Admin routes complete: news, transactions, rates
+// Admin routes complete: news, transactions, rates, + payment-methods
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { v2: cloudinary } = require('cloudinary');
+const mongoose = require('mongoose');
 
 const News = require('../models/News');
 const Transaction = require('../models/Transaction');
@@ -39,6 +40,35 @@ async function requireAdmin(req, res, next) {
   } catch (err) {
     console.error('requireAdmin err', err && err.message ? err.message : err);
     return res.status(401).json({ success: false, message: 'Authentification échouée', error: String(err) });
+  }
+}
+
+/* ---------- PAYMENT METHODS model bootstrap (use existing model if present) ---------- */
+let PaymentMethod;
+try {
+  // try to require an external model if it exists
+  PaymentMethod = require('../models/PaymentMethod');
+  // if the module exports the model directly, ensure using it
+  if (PaymentMethod && PaymentMethod.modelName) {
+    // likely the mongoose model itself, ok
+  } else if (PaymentMethod && PaymentMethod.default && PaymentMethod.default.modelName) {
+    PaymentMethod = PaymentMethod.default;
+  }
+} catch (e) {
+  // fallback: define a minimal schema inline if models/PaymentMethod.js doesn't exist
+  if (mongoose && !mongoose.models.PaymentMethod) {
+    const pmSchema = new mongoose.Schema({
+      name: { type: String, required: true },
+      type: { type: String, enum: ['fiat', 'crypto'], default: 'fiat' },
+      network: { type: String, default: '' },
+      details: { type: String, default: '' },
+      active: { type: Boolean, default: true },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now }
+    }, { timestamps: true });
+    PaymentMethod = mongoose.model('PaymentMethod', pmSchema);
+  } else {
+    PaymentMethod = null;
   }
 }
 
@@ -240,6 +270,70 @@ router.delete('/admin/rates/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('DELETE /admin/rates/:id err', err);
     res.status(500).json({ success: false, message: 'Erreur suppression taux', error: String(err) });
+  }
+});
+
+/* ---------- PAYMENT METHODS (CRUD) ---------- */
+
+// GET payment methods
+router.get('/admin/payment-methods', requireAdmin, async (req, res) => {
+  try {
+    if (!PaymentMethod) return res.status(500).json({ success: false, message: 'PaymentMethod model non disponible' });
+    const methods = await PaymentMethod.find().sort({ createdAt: -1 });
+    return res.json({ success: true, methods });
+  } catch (err) {
+    console.error('GET /admin/payment-methods err', err);
+    return res.status(500).json({ success: false, message: 'Impossible de récupérer moyens de paiement', error: String(err) });
+  }
+});
+
+// POST create or update payment method
+router.post('/admin/payment-methods', requireAdmin, async (req, res) => {
+  try {
+    if (!PaymentMethod) return res.status(500).json({ success: false, message: 'PaymentMethod model non disponible' });
+    const { id, name, type, network, details, active } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Nom requis' });
+
+    if (id) {
+      const pm = await PaymentMethod.findById(id);
+      if (!pm) return res.status(404).json({ success: false, message: 'Méthode introuvable' });
+      pm.name = name.trim();
+      pm.type = type || pm.type;
+      pm.network = network || pm.network;
+      pm.details = details || pm.details;
+      pm.active = typeof active === 'boolean' ? active : pm.active;
+      pm.updatedAt = new Date();
+      await pm.save();
+      return res.json({ success: true, message: 'Méthode mise à jour', method: pm });
+    } else {
+      const pm = new PaymentMethod({
+        name: name.trim(),
+        type: type || 'fiat',
+        network: network || '',
+        details: details || '',
+        active: typeof active === 'boolean' ? active : true
+      });
+      await pm.save();
+      return res.status(201).json({ success: true, message: 'Méthode créée', method: pm });
+    }
+  } catch (err) {
+    console.error('POST /admin/payment-methods err', err);
+    return res.status(500).json({ success: false, message: 'Erreur sauvegarde méthode', error: String(err) });
+  }
+});
+
+// DELETE payment method
+router.delete('/admin/payment-methods/:id', requireAdmin, async (req, res) => {
+  try {
+    if (!PaymentMethod) return res.status(500).json({ success: false, message: 'PaymentMethod model non disponible' });
+    const id = req.params.id;
+    const pm = await PaymentMethod.findById(id);
+    if (!pm) return res.status(404).json({ success: false, message: 'Méthode introuvable' });
+    await PaymentMethod.findByIdAndDelete(id);
+    return res.json({ success: true, message: 'Méthode supprimée' });
+  } catch (err) {
+    console.error('DELETE /admin/payment-methods/:id err', err);
+    return res.status(500).json({ success: false, message: 'Erreur suppression méthode', error: String(err) });
   }
 });
 

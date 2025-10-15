@@ -1,7 +1,4 @@
 // routes/api.js
-// Routes publiques et API (prices, market_chart, news, transactions, rates)
-// Mis à jour pour appeler le module mailer après création de transaction.
-
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
@@ -11,8 +8,9 @@ const News = require('../models/News');
 const Rate = require('../models/Rate');
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
+const PaymentMethod = require('../models/PaymentMethod'); // <-- ton modèle de paiement
 
-const mailer = require('./mail'); // notre nouveau module mailer
+const mailer = require('./mail');
 
 const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3';
 
@@ -20,7 +18,6 @@ const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3
 let pricesCache = null, pricesFetched = 0;
 const PRICES_TTL = 30 * 1000;
 
-// GET /api/prices
 router.get('/prices', async (req, res) => {
   try {
     const now = Date.now();
@@ -87,7 +84,18 @@ router.get('/rates', async (req, res) => {
   }
 });
 
-// --- helper: getUserFromHeader (returns user or null) ---
+// --- payments ---
+router.get('/payments', async (req, res) => {
+  try {
+    const payments = await PaymentMethod.find().sort({ type: 1, name: 1 });
+    res.json(payments);
+  } catch (err) {
+    console.error('GET /api/payments err', err);
+    res.status(500).json({ error: 'Impossible de récupérer les moyens de paiement' });
+  }
+});
+
+// --- helper: getUserFromHeader ---
 async function getUserFromHeader(req) {
   try {
     const auth = req.headers['authorization'] || '';
@@ -105,23 +113,15 @@ async function getUserFromHeader(req) {
   }
 }
 
-/**
- * POST /api/transactions
- * - Accepte transactions même sans token (guest).
- * - Forcer status: 'pending'
- * - Structure attendue dans body: { from, to, amountFrom, amountTo, type, details }
- * - Si token présent et valide : associe user.
- * - Envoi d'e-mails (admin+client) via routes/mail.js
- */
+// --- transactions ---
 router.post('/transactions', async (req, res) => {
   try {
     const { from, to, amountFrom, amountTo, type, details } = req.body || {};
-    // basic validation
     if (!from || !to || typeof amountFrom === 'undefined' || typeof amountTo === 'undefined') {
       return res.status(400).json({ success: false, message: 'Champs requis: from, to, amountFrom, amountTo' });
     }
 
-    const user = await getUserFromHeader(req); // may be null -> guest allowed
+    const user = await getUserFromHeader(req);
 
     const txDoc = await Transaction.create({
       user: user ? user._id : null,
@@ -130,21 +130,18 @@ router.post('/transactions', async (req, res) => {
       amountFrom: Number(amountFrom),
       amountTo: Number(amountTo),
       details: details || {},
-      status: 'pending',      // force pending by default
+      status: 'pending',
       createdAt: new Date()
     });
 
-    // emit newTransaction via socket.io (admins can listen)
     try { global.io && global.io.emit('newTransaction', txDoc); } catch (e) { console.warn('socket emit failed', e); }
 
-    // determine client email (either from logged user or details.email)
     let clientEmail = null;
     if (user && user.email) clientEmail = user.email;
     else if (details && typeof details === 'object') {
       clientEmail = details.email || details.emailAddress || details.mail || null;
     }
 
-    // send emails (best-effort)
     try {
       mailer.sendTransactionCreated(txDoc, clientEmail).catch(err => {
         console.warn('mailer.sendTransactionCreated failed', err && err.message ? err.message : err);
@@ -160,25 +157,15 @@ router.post('/transactions', async (req, res) => {
   }
 });
 
-/**
- * GET /api/transactions
- * - ?mine=1 -> return user's transactions if token present (else [] for guests)
- * - otherwise -> admin or public listing (admin should use /admin/transactions)
- */
 router.get('/transactions', async (req, res) => {
   try {
     const mine = req.query.mine === '1';
     const user = await getUserFromHeader(req);
     let txs;
     if (mine) {
-      if (user) {
-        txs = await Transaction.find({ user: user._id }).sort({ createdAt: -1 });
-      } else {
-        // guest: frontend uses localStorage; keep empty to indicate none on server
-        txs = [];
-      }
+      if (user) txs = await Transaction.find({ user: user._id }).sort({ createdAt: -1 });
+      else txs = [];
     } else {
-      // public listing (not paginated here) - admin UI should prefer /admin/transactions
       txs = await Transaction.find().populate('user').sort({ createdAt: -1 }).limit(1000);
     }
     res.json(txs);
