@@ -1,6 +1,6 @@
 // routes/api.js
-// Routes publiques et API (prices, market_chart, news, transactions, rates, payments)
-// Dépendances : axios, jsonwebtoken, mongoose models existants (News, Rate, Transaction, User, PaymentMethod)
+// Routes publiques et API (prices, market_chart, news, transactions, rates)
+// Mis à jour pour appeler le module mailer après création de transaction.
 
 const express = require('express');
 const router = express.Router();
@@ -11,7 +11,8 @@ const News = require('../models/News');
 const Rate = require('../models/Rate');
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
-const PaymentMethod = require('../models/PaymentMethod'); // NEW
+
+const mailer = require('./mail'); // notre nouveau module mailer
 
 const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3';
 
@@ -86,31 +87,6 @@ router.get('/rates', async (req, res) => {
   }
 });
 
-// --- payments (public) ---
-// GET /api/payments
-// optional query: ?active=1&type=crypto|fiat&network=BEP20
-router.get('/payments', async (req, res) => {
-  try {
-    const q = {};
-    if (typeof req.query.active !== 'undefined') {
-      // treat active=1 or active=true as truthy
-      const a = String(req.query.active).toLowerCase();
-      q.active = (a === '1' || a === 'true');
-    }
-    if (req.query.type && ['crypto','fiat'].includes(req.query.type)) q.type = req.query.type;
-    if (req.query.network) q.network = String(req.query.network).trim();
-
-    // if no filters provided, default to active only (conservative)
-    const finalQuery = Object.keys(q).length ? q : { active: true };
-
-    const methods = await PaymentMethod.find(finalQuery).sort({ type: 1, name: 1 });
-    res.json(methods);
-  } catch (err) {
-    console.error('GET /api/payments err', err);
-    res.status(500).json({ error: 'Impossible de récupérer les moyens de paiement' });
-  }
-});
-
 // --- helper: getUserFromHeader (returns user or null) ---
 async function getUserFromHeader(req) {
   try {
@@ -135,6 +111,7 @@ async function getUserFromHeader(req) {
  * - Forcer status: 'pending'
  * - Structure attendue dans body: { from, to, amountFrom, amountTo, type, details }
  * - Si token présent et valide : associe user.
+ * - Envoi d'e-mails (admin+client) via routes/mail.js
  */
 router.post('/transactions', async (req, res) => {
   try {
@@ -159,6 +136,22 @@ router.post('/transactions', async (req, res) => {
 
     // emit newTransaction via socket.io (admins can listen)
     try { global.io && global.io.emit('newTransaction', txDoc); } catch (e) { console.warn('socket emit failed', e); }
+
+    // determine client email (either from logged user or details.email)
+    let clientEmail = null;
+    if (user && user.email) clientEmail = user.email;
+    else if (details && typeof details === 'object') {
+      clientEmail = details.email || details.emailAddress || details.mail || null;
+    }
+
+    // send emails (best-effort)
+    try {
+      mailer.sendTransactionCreated(txDoc, clientEmail).catch(err => {
+        console.warn('mailer.sendTransactionCreated failed', err && err.message ? err.message : err);
+      });
+    } catch (mailErr) {
+      console.warn('sendTransactionCreated threw', mailErr && mailErr.message ? mailErr.message : mailErr);
+    }
 
     res.json({ success: true, message: 'Transaction créée', transaction: txDoc });
   } catch (err) {

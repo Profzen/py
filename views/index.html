@@ -4,32 +4,145 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PY Crypto — Accueil</title>
   <link rel="stylesheet" href="/style.css">
+
+  <!-- Page-specific theme overrides (makes page less white, more blue; uses public/backi as background) -->
+  <style>
+    /* prevent horizontal overflow on mobile */
+    html,body{overflow-x:hidden;}
+
+    /* background image + soft blue overlay */
+    body{
+      /* image in public/backi (you said you'll place it there) */
+      background:
+        linear-gradient(180deg, rgba(11,118,209,0.06), rgba(11,118,209,0.02)),
+        url('/backi.jpg') center/cover no-repeat;
+      /* keep a subtle base color fallback for areas where image doesn't cover */
+      background-color: #eaf4fb;
+    }
+
+    /* Tweak container padding so hero uses more horizontal space on large screens */
+    .container{
+      max-width:1200px;
+      margin:0 auto;
+      padding:36px 28px;
+    }
+
+    /* Hero adjustments: slightly translucent, bluish card with subtle glass effect */
+    .hero-card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(245,252,255,0.86));
+      border: 1px solid rgba(11,118,209,0.06);
+      box-shadow: 0 18px 40px rgba(11,118,209,0.06);
+      backdrop-filter: blur(6px);
+      padding:30px;
+      border-radius:14px;
+    }
+
+    /* Make h1 a touch more prominent and bluer */
+    .hero-card h1{ color: #08324d; font-size:32px; margin-bottom:8px; }
+    .hero-card p{ color: #1e4258; }
+
+    /* price-card: stronger blue accent */
+    .price-card{
+      background: linear-gradient(180deg, rgba(11,118,209,0.03), rgba(31,169,255,0.02));
+      border: 1px solid rgba(11,118,209,0.06);
+      box-shadow: 0 14px 36px rgba(11,118,209,0.04);
+      padding:20px;
+      border-radius:12px;
+    }
+    .price-card h3{ color:#0b5d86; margin-top:0; }
+
+    /* CTA buttons: more blue emphasis and subtle glow */
+    .cta .btn{ box-shadow: 0 12px 32px rgba(11,118,209,0.08); }
+    .cta .btn.ghost{ color: #0b76d1; border-color: rgba(11,118,209,0.12); }
+
+    /* Features: slightly translucent, smaller shadows */
+    .feature{
+      background: linear-gradient(180deg, rgba(255,255,255,0.90), rgba(250,255,255,0.90));
+      border: 1px solid rgba(11,118,209,0.04);
+      box-shadow: 0 8px 24px rgba(11,118,209,0.03);
+      padding:14px;
+      border-radius:12px;
+    }
+
+    /* 3-step quick start section */
+    .quick-steps{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:14px;
+      margin-top:18px;
+    }
+    .step{
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(245,252,255,0.95));
+      border: 1px solid rgba(11,118,209,0.03);
+      padding:16px;
+      border-radius:12px;
+      text-align:center;
+      box-shadow: 0 10px 30px rgba(11,118,209,0.03);
+    }
+    .step .num{
+      width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg,#0b76d1,#1fa9ff);color:white;font-weight:800;margin-bottom:10px;
+      font-size:18px;
+    }
+    .step p{ color:#234b5f; margin:6px 0 0; }
+
+    /* Footer: darker blue strip and white-ish text */
+    .site-footer{
+      margin-top:28px;
+      background: linear-gradient(180deg, rgba(11,118,209,0.06), rgba(11,118,209,0.03));
+      padding:26px;
+      border-top: 1px solid rgba(11,118,209,0.04);
+      color: #08324d;
+    }
+    .site-footer a{ color: #064a6f; text-decoration:underline; }
+    .footer-bottom{ color: #08324d; opacity:0.9; }
+
+    /* Inputs and cards: slightly elevated on this page */
+    input, select, textarea{ border-radius:10px; border:1px solid rgba(11,118,209,0.06); background:rgba(255,255,255,0.95); }
+
+    /* Make price list items less white and a bit blue */
+    .price-item{ background: linear-gradient(90deg, rgba(11,118,209,0.02), transparent); border:1px solid rgba(11,118,209,0.03); }
+
+    /* Responsive tweaks */
+    @media (max-width:1100px){
+      .hero{ grid-template-columns: 1fr; gap:18px; }
+      .container{ padding:22px; }
+      .quick-steps{ grid-template-columns:repeat(2,1fr); }
+    }
+    @media (max-width:720px){
+      .container{ padding:18px; }
+      .hero-card{ padding:18px; }
+      .hero-card h1{ font-size:22px; }
+      .price-card{ padding:14px; }
+      .quick-steps{ grid-template-columns:1fr; }
+    }
+  </style>
 </head>
 <body>
   <main class="container">
-    <section class="hero">
-      <div class="hero-card">
-        <h1>PY Crypto — Échangez simplement</h1>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-card" role="main">
+        <h1 id="hero-title">PY Crypto — Échangez simplement</h1>
         <p>Consultez les cours en temps réel, effectuez des échanges crypto ↔ fiat et suivez l'actualité.</p>
 
-        <div class="cta">
-          <a class="btn" href="/exchange">Faire un échange</a>
-          <a class="btn ghost" href="/news">Voir les news</a>
-          <a class="btn ghost" href="/login">Se connecter</a>
+        <div class="cta" style="margin-top:14px">
+          <a class="btn" href="/exchange" title="Faire un échange">Faire un échange</a>
+          <a class="btn ghost" href="/news" title="Voir les news">Voir les news</a>
+          <a class="btn ghost nav-login" href="/login" title="Se connecter">Se connecter</a>
         </div>
 
         <div class="section" style="margin-top:20px">
           <h3>Fonctionnalités clés</h3>
-          <div class="features-grid">
-            <div class="feature">
+          <div class="features-grid" aria-hidden="false">
+            <div class="feature" role="group" aria-label="Échanges sûrs">
               <h4>Échanges sûrs</h4>
               <p class="small">Supporte crypto-crypto, crypto-fiat et fiat-fiat.</p>
             </div>
-            <div class="feature">
+            <div class="feature" role="group" aria-label="Administration complète">
               <h4>Administration complète</h4>
               <p class="small">Gestion des news, des taux et des transactions.</p>
             </div>
-            <div class="feature">
+            <div class="feature" role="group" aria-label="Données en temps réel">
               <h4>Données en temps réel</h4>
               <p class="small">Cours et graphiques mis à jour automatiquement.</p>
             </div>
@@ -45,18 +158,44 @@
           </div>
         </div>
 
+        <!-- NEW: Quick 3-step guide -->
+        <div class="section" style="margin-top:18px" aria-labelledby="quick-steps-title">
+          <h3 id="quick-steps-title">Commencez en 3 étapes</h3>
+          <div class="quick-steps" role="list">
+            <div class="step" role="listitem">
+              <div class="num">1</div>
+              <strong>Choisir la paire</strong>
+              <p>Sélectionnez la devise que vous envoyez et celle que vous souhaitez recevoir.</p>
+            </div>
+            <div class="step" role="listitem">
+              <div class="num">2</div>
+              <strong>Fournir les détails</strong>
+              <p>Renseignez vos informations de paiement / adresse de réception et confirmez la transaction.</p>
+            </div>
+            <div class="step" role="listitem">
+              <div class="num">3</div>
+              <strong>Recevoir</strong>
+              <p>Après validation, vous recevrez les fonds. Suivez le statut depuis votre historique.</p>
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      <aside class="price-card">
-        <h3>Cours rapides</h3>
-        <div id="crypto-prices" class="price-list"></div>
-        <small class="small" style="display:block;margin-top:10px">Mise à jour automatique toutes les 30s</small>
+      <aside class="price-card" aria-labelledby="prices-title">
+        <h3 id="prices-title">Cours rapides</h3>
+        <div id="crypto-prices" class="price-list" aria-live="polite">
+          <!-- JS will populate prices -->
+          <div class="price-item"><div class="left"><div class="coin-icon">BTC</div><div style="margin-left:10px"><strong>Bitcoin</strong><div class="small">BTC • USD</div></div></div><div class="value">--</div></div>
+          <div class="price-item"><div class="left"><div class="coin-icon">ETH</div><div style="margin-left:10px"><strong>Ethereum</strong><div class="small">ETH • USD</div></div></div><div class="value">--</div></div>
+        </div>
+        <small class="small" style="display:block;margin-top:10px;color:#194a63">Mise à jour automatique toutes les 30s</small>
       </aside>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <div class="footer-grid">
+  <footer class="site-footer" role="contentinfo">
+    <div class="footer-grid" role="navigation" aria-label="Footer links">
       <div class="footer-col">
         <h4>PY Crypto</h4>
         <p class="small">Plateforme d'échange sécurisée — suivez les cours, échangez et restez informé.</p>
@@ -76,7 +215,7 @@
       <div class="footer-col">
         <h4>Newsletter</h4>
         <div class="newsletter">
-          <input placeholder="Votre email"><button class="btn">S'abonner</button>
+          <input placeholder="Votre email" aria-label="Email newsletter"><button class="btn">S'abonner</button>
         </div>
       </div>
     </div>
@@ -86,5 +225,55 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/script.js"></script>
+
+  <!-- Page JS: update nav labels based on logged-in user stored in localStorage -->
+  <script>
+    (function(){
+      // Try to read user from localStorage (auth code uses same key in other pages)
+      let raw = null;
+      try { raw = localStorage.getItem('user'); } catch(e){ raw = null; }
+      let user = null;
+      if(raw){
+        try { user = JSON.parse(raw); } catch(e){ user = null; }
+      }
+
+      if(user && (user.username || user._id)){
+        const uname = user.username || user.email || 'Mon compte';
+
+        // Replace any visible "Mon compte" anchor text -> username
+        document.querySelectorAll('a,button,span').forEach(el => {
+          if(!el || !el.textContent) return;
+          const t = el.textContent.trim();
+          // exact matches; supports different capitalizations/spaces
+          if(/^mon compte$/i.test(t)) {
+            el.textContent = uname;
+            // add a class for styling if desired
+            el.classList.add('logged-username');
+            // set href to account page if it's an anchor
+            if(el.tagName.toLowerCase() === 'a' && (!el.getAttribute('href') || el.getAttribute('href') === '#')) {
+              el.setAttribute('href', '/account');
+            }
+          }
+          if(/^se connecter$/i.test(t) || /^se connecter ✓$/i.test(t)) {
+            // change "Se connecter" to "Connecté" on mobile top bar and elsewhere
+            el.textContent = 'Connecté';
+            el.classList.add('nav-connected');
+            if(el.tagName.toLowerCase() === 'a') {
+              // point to account page instead of login
+              el.setAttribute('href', '/account');
+            }
+          }
+        });
+
+        // Also update specific button we added in the CTA if present
+        const ctaLogin = document.querySelector('.cta .nav-login');
+        if(ctaLogin){
+          ctaLogin.textContent = uname;
+          ctaLogin.classList.add('logged-username');
+          ctaLogin.setAttribute('href','/account');
+        }
+      }
+    })();
+  </script>
 </body>
 </html>
