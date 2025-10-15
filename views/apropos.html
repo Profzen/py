@@ -1,19 +1,185 @@
 <!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>À propos — PY Crypto</title><link rel="stylesheet" href="/style.css"></head>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>À propos — PY Crypto</title>
+  <link rel="stylesheet" href="/style.css" />
+
+  <style>
+    /* --- Ajustements spécifiques à la page --- */
+    body {
+      overflow-x: hidden;
+    }
+
+    main.container {
+      padding: 2rem 1rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .hero-card {
+      background: linear-gradient(135deg, #e8f1ff, #f6faff);
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      text-align: center;
+    }
+
+    .hero-card h2 {
+      font-size: 2rem;
+      color: #0a3c91;
+      margin-bottom: 0.5rem;
+    }
+
+    .hero-card p.small {
+      color: #333;
+      font-size: 1rem;
+      line-height: 1.5;
+      max-width: 700px;
+      margin: 0.5rem auto;
+    }
+
+    .mission {
+      margin-top: 2rem;
+      text-align: center;
+    }
+
+    .mission h3 {
+      font-size: 1.5rem;
+      color: #0a3c91;
+      margin-bottom: 0.5rem;
+    }
+
+    .values {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 2.5rem;
+    }
+
+    .value-card {
+      flex: 1 1 250px;
+      max-width: 300px;
+      background: #fff;
+      border-radius: 15px;
+      padding: 1.5rem;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.06);
+      text-align: center;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .value-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+    }
+
+    .value-card h4 {
+      color: #0a3c91;
+      margin-bottom: 0.5rem;
+    }
+
+    .value-card p {
+      color: #444;
+      font-size: 0.95rem;
+    }
+
+    a.button-link {
+      text-decoration: none;
+      color: white;
+      background: linear-gradient(135deg, #007bff, #0056d6);
+      padding: 0.7rem 1.2rem;
+      border-radius: 10px;
+      font-weight: 500;
+      display: inline-block;
+      transition: background 0.3s ease;
+    }
+
+    a.button-link:hover {
+      background: linear-gradient(135deg, #0066e1, #003f9f);
+    }
+
+    /* --- Section finale --- */
+    .cta {
+      margin-top: 3rem;
+      text-align: center;
+    }
+
+    .cta p {
+      font-size: 1rem;
+      color: #222;
+      margin-bottom: 1rem;
+    }
+
+    .site-footer {
+      background: linear-gradient(135deg, #0056d6, #007bff);
+      color: white;
+      text-align: center;
+      padding: 1rem;
+      border-top: 2px solid rgba(255,255,255,0.1);
+      margin-top: 3rem;
+    }
+
+    .site-footer a {
+      text-decoration: none;
+      color: white;
+    }
+
+    @media (max-width: 768px) {
+      .values {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+
 <body>
+  <!-- NavBar déjà incluse via layout général -->
   <main class="container">
     <section class="hero-card">
-      <h2>À propos</h2>
-      <p class="small">PY Crypto est une plateforme d'échange conçue pour être simple, sécurisée et rapide.</p>
-      <div style="margin-top:12px">
-        <h4>Notre mission</h4>
-        <p class="small">Rendre l'accès aux cryptos facile pour tous, avec une interface claire et des outils d'administration puissants.</p>
+      <h2>À propos de PY Crypto</h2>
+      <p class="small">
+        PY Crypto est une plateforme d’échange conçue pour être <strong>simple, sécurisée et rapide</strong>.
+        Nous croyons que les cryptomonnaies doivent être accessibles à tous, sans complexité.
+      </p>
+    </section>
+
+    <section class="mission">
+      <h3>Notre mission</h3>
+      <p>
+        Rendre l’accès aux cryptos fluide et fiable, grâce à une interface claire et des outils d’administration puissants.
+      </p>
+    </section>
+
+    <section class="values">
+      <div class="value-card">
+        <h4>🚀 Innovation</h4>
+        <p>Nous améliorons constamment notre plateforme pour offrir une expérience de trading fluide et moderne.</p>
+      </div>
+
+      <div class="value-card">
+        <h4>🔒 Sécurité</h4>
+        <p>Vos fonds et vos données sont protégés grâce à une infrastructure sécurisée et des audits réguliers.</p>
+      </div>
+
+      <div class="value-card">
+        <h4>🤝 Transparence</h4>
+        <p>Nous croyons en une communication claire et une expérience utilisateur honnête et sans piège.</p>
       </div>
     </section>
+
+    <div class="cta">
+      <p>Envie d’en savoir plus ou de commencer votre première transaction ?</p>
+      <a href="/exchange" class="button-link">Faire un échange</a>
+    </div>
   </main>
 
-  <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
+  <footer class="site-footer">
+    <div class="footer-bottom">© 2025 PY Crypto — Tous droits réservés</div>
+  </footer>
+
   <script src="/js/script.js"></script>
 </body>
 </html>

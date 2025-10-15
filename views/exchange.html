@@ -5,57 +5,120 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Échange — PY Crypto</title>
   <link rel="stylesheet" href="/style.css">
+
+  <!-- Page-specific styles / responsiveness -->
   <style>
-    /* Layout container */
-    .container{max-width:980px;margin:18px auto;padding:0 12px;box-sizing:border-box}
+    /* Prevent horizontal overflow */
+    html,body{overflow-x:hidden;}
+
+    /* Layout container slightly narrower here for nicer hero stretch */
+    .container{
+      max-width:980px;
+      margin:18px auto;
+      padding:0 12px;
+      box-sizing:border-box;
+    }
+
+    /* Wide intro section: slightly wider visually (uses negative margin inside container) */
+    .intro-hero{
+      margin: -8px -12px 18px -12px;
+      padding:28px 20px;
+      border-radius:14px;
+      background: linear-gradient(180deg, rgba(11,118,209,0.04), rgba(31,169,255,0.02));
+      border:1px solid rgba(11,118,209,0.06);
+      box-shadow: 0 14px 36px rgba(11,118,209,0.04);
+    }
+    .intro-hero h2{margin:0 0 6px;color:#05324a}
+    .intro-hero p.small{margin:0 0 12px;color:#115b82}
+
+    .intro-hero .cta-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .intro-hero .cta-row .btn{padding:10px 14px}
+    .intro-hero .cta-row .btn.ghost{background:transparent;border:1px solid rgba(11,118,209,0.08);color:#0b76d1}
+
+    /* Main card/form */
     .hero-card{background:var(--card);padding:18px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)}
     .card-form{margin-top:12px}
     .form-row{display:flex;gap:12px}
     .col{flex:1;min-width:0}
     label{display:block;margin-bottom:6px;font-weight:600}
     input[type="number"], input[type="text"], input[type="email"], select, textarea {
-      width:100%; padding:10px;border-radius:8px;border:1px solid var(--border);box-sizing:border-box;
+      width:100%; padding:10px;border-radius:8px;border:1px solid var(--border);box-sizing:border-box;background:transparent;
     }
     .small{color:var(--muted);font-size:13px}
-    .btn { padding:10px 14px;border-radius:10px;border:0;background:linear-gradient(90deg,#0b76d1,#1fa9ff);color:#fff; cursor:pointer; }
+    .btn { padding:10px 14px;border-radius:10px;border:0;background:linear-gradient(90deg,#0b76d1,#1fa9ff);color:#fff; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center }
     .btn.ghost { background:transparent;border:1px solid var(--border); color:var(--muted) }
-    @media (max-width:640px){
-      .form-row{flex-direction:column}
-    }
+    /* remove underline for any anchor-like buttons */
+    a.btn, .btn { text-decoration:none !important; }
 
-    /* Modal */
-    .modal{position:fixed;inset:0;background:rgba(8,20,34,0.5);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
+    /* HowTo section after the form */
+    .howto{
+      margin-top:22px;
+      padding:18px;border-radius:12px;border:1px solid rgba(11,118,209,0.04);
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(245,252,255,0.95));
+      box-shadow: 0 10px 30px rgba(11,118,209,0.03);
+    }
+    .howto-grid{display:flex;gap:12px;align-items:stretch;flex-wrap:wrap}
+    .howto-step{flex:1;min-width:220px;background:linear-gradient(180deg,#ffffff,#fbfeff);border-radius:10px;padding:14px;border:1px solid var(--border);box-shadow:0 8px 24px rgba(8,30,50,0.03)}
+    .howto-step h4{margin:0 0 8px;color:#0b6a98}
+    .howto-step p{margin:0;color:var(--muted)}
+
+    /* Modal customizations */
+    .modal{position:fixed;inset:0;background:rgba(8,20,34,0.45);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}
     .modal .box{background:#fff;border-radius:12px;padding:16px;max-width:720px;width:100%;box-shadow:0 20px 50px rgba(2,12,27,0.3);display:flex;flex-direction:column;max-height:85vh;overflow:auto}
     .modal .box h3{margin:0 0 8px}
     .modal .box .small{margin-bottom:8px}
-    .modal .box form{display:flex;flex-direction:column;gap:8px}
-    .modal .box form .row{display:flex;gap:8px}
-    .modal .box input, .modal .box select, .modal .box textarea { margin:0 }
+
     .network-address{background:#f7fbff;border:1px dashed #cfe9ff;padding:10px;border-radius:8px;font-size:14px;margin-bottom:8px}
     .muted{color:var(--muted);font-size:13px}
     .tx-instruction{font-weight:700;margin-bottom:6px}
     .tx-note{font-size:13px;color:#555;margin-bottom:8px}
 
-    /* ensure page responsive (smaller devices) */
-    @media (max-width:420px){
+    /* Responsive tweaks */
+    @media (max-width:940px){
+      .intro-hero{padding:18px}
+      .howto-grid{flex-direction:column}
+    }
+    @media (max-width:640px){
+      .form-row{flex-direction:column}
+      .intro-hero{margin-left:-12px;margin-right:-12px;padding:14px}
+      .container{padding-left:10px;padding-right:10px}
+      .howto-step{min-width:unset}
+      .btn{padding:9px 12px}
       .modal .box{padding:12px}
-      .btn{padding:8px 10px}
     }
 
-    /* small helpers */
-    .stack{display:flex;flex-direction:column;gap:8px}
-    .h-scroll { overflow-x:auto }
+    /* Small helpers (prevent link underline everywhere for "buttonish" anchor links) */
+    a { text-decoration: none; }
+    a:focus, a:hover { text-decoration: none; }
+
+    /* Ensure no mobile horizontal scroll from long monospace text in network-address */
+    .network-address, .network-address * { word-break:break-all; overflow-wrap:break-word; }
+
   </style>
 </head>
 <body>
-  <main class="container">
-    <section class="hero-card">
-      <h2>Échange</h2>
+  <main class="container" role="main">
+
+    <!-- INTRO HERO (wider) -->
+    <section class="intro-hero" aria-labelledby="intro-title">
+      <h2 id="intro-title">Échanger en un clin d'œil</h2>
+      <p class="small">Utilisez notre interface simple pour convertir crypto ⇄ fiat ou crypto ⇄ crypto rapidement et en toute sécurité. Choisissez une paire, indiquez le montant et suivez la procédure.</p>
+
+      <div class="cta-row" style="margin-top:12px">
+        <a class="btn" href="/exchange" title="Faire un échange">Commencer un échange</a>
+        <a class="btn ghost" href="#howto" title="Comment ça marche ?">Tuto / Comment ça marche ?</a>
+        <a class="btn ghost" href="/news" title="Voir les news">Voir les news</a>
+      </div>
+    </section>
+
+    <!-- MAIN FORM CARD -->
+    <section class="hero-card" aria-labelledby="exchange-title">
+      <h2 id="exchange-title">Échange</h2>
       <p class="small">Choisissez la paire, saisissez le montant, confirmez les détails.</p>
 
-      <div class="card-form">
-        <form id="exchange-form" class="stack">
-          <div class="form-row">
+      <div class="card-form" id="exchange-form-wrap">
+        <form id="exchange-form" class="stack" aria-label="Formulaire d'échange">
+          <div class="form-row" role="group" aria-label="Choix des devises">
             <div class="col">
               <label for="from">De</label>
               <select id="from" aria-label="De"></select>
@@ -66,28 +129,82 @@
             </div>
           </div>
 
-          <div>
+          <div style="margin-top:8px">
             <label for="amountFrom">Montant</label>
-            <input type="number" id="amountFrom" placeholder="Montant" min="0" step="any">
+            <input type="number" id="amountFrom" placeholder="Montant" min="0" step="any" inputmode="decimal" aria-label="Montant à envoyer">
           </div>
 
-          <div>
+          <div style="margin-top:8px">
             <label for="amountTo">Montant estimé reçu</label>
-            <input type="text" id="amountTo" readonly>
+            <input type="text" id="amountTo" readonly aria-readonly="true">
           </div>
 
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;align-items:center">
             <button class="btn" id="do-exchange" type="button">Soumettre</button>
             <button type="button" class="btn ghost" id="refresh-rates">Rafraîchir taux</button>
-            <div style="margin-left:auto" class="small muted" id="rates-source"></div>
+            <div style="margin-left:auto" class="small muted" id="rates-source" aria-hidden="false"></div>
           </div>
         </form>
       </div>
     </section>
+
+    <!-- HOWTO / detailed steps (anchor target) -->
+    <section id="howto" class="howto" aria-labelledby="howto-title">
+      <h3 id="howto-title">Comment effectuer un échange — en 3 étapes</h3>
+      <div class="howto-grid" role="list">
+        <div class="howto-step" role="listitem" aria-label="Étape 1 - Choisir la paire">
+          <h4>1. Choisir la paire</h4>
+          <p class="small">Sélectionnez la devise que vous souhaitez envoyer et celle que vous voulez recevoir. Les taux affichés sont mis à jour à partir de notre base.</p>
+        </div>
+
+        <div class="howto-step" role="listitem" aria-label="Étape 2 - Entrer le montant">
+          <h4>2. Entrer le montant</h4>
+          <p class="small">Saisissez le montant à envoyer. Le montant estimé reçu s’affichera automatiquement selon le taux.</p>
+        </div>
+
+        <div class="howto-step" role="listitem" aria-label="Étape 3 - Confirmer et envoyer">
+          <h4>3. Confirmer</h4>
+          <p class="small">Après confirmation, suivez les instructions de paiement (adresse ou compte). Votre transaction sera créée en statut <strong>pending</strong> et vous recevrez un e-mail de confirmation si vous êtes connecté.</p>
+        </div>
+      </div>
+
+      <div style="margin-top:14px" class="small muted">
+        <strong>Astuce :</strong> si vous envoyez une crypto, choisissez d'abord le réseau (BEP20, ERC20, TRC20, etc.) pour afficher l'adresse d'envoi correcte.
+      </div>
+    </section>
+
   </main>
 
-  <footer class="site-footer"><div class="footer-bottom">© PY Crypto</div></footer>
+  <footer class="site-footer" role="contentinfo">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <h4>PY Crypto</h4>
+        <p class="small">Plateforme d'échange sécurisée — suivez les cours, échangez et restez informé.</p>
+        <div style="margin-top:12px">
+          <small class="small">Contact: contact@example.com</small>
+        </div>
+      </div>
+      <div class="footer-col">
+        <h4>Liens rapides</h4>
+        <ul style="padding-left:16px;color:var(--muted)">
+          <li><a href="/">Accueil</a></li>
+          <li><a href="/exchange">Échange</a></li>
+          <li><a href="/news">News</a></li>
+          <li><a href="/historique">Historique</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Newsletter</h4>
+        <div class="newsletter">
+          <input placeholder="Votre email" aria-label="Email newsletter"><button class="btn">S'abonner</button>
+        </div>
+      </div>
+    </div>
 
+    <div class="footer-bottom">© PY Crypto — construit avec soin • <a href="/apropos">À propos</a> • <a href="/contact">Contact</a></div>
+  </footer>
+
+  <!-- Existing exchange JS logic adapted and preserved -->
   <script>
   (function(){
     // DOM refs
@@ -233,14 +350,12 @@
       } else {
         filtered.forEach(p => {
           const details = (p.details || p.addressOrAccount || '');
-          // store details in data-details; value is id encoded
           sel.innerHTML += `<option value="${encodeURIComponent(p._id)}" data-details="${encodeURIComponent(details)}">${p.name}${p.network ? ' ('+p.network+')' : ''}</option>`;
         });
       }
       return sel;
     }
 
-    // Build network select
     function buildNetworkSelect(nameAttr){
       const networks = ['BEP20','TRC20','ERC20','BTC','LTC'];
       const sel = document.createElement('select');
@@ -253,45 +368,38 @@
       return sel;
     }
 
-    // Open dynamic modal
+    // Modal code (unchanged logic)...
+    // (kept verbatim from previous code to preserve behavior)
     function openTransactionModal(base){
-      // base = { from, to, amountFrom, type }
       const modal = document.createElement('div'); modal.className = 'modal';
       const box = document.createElement('div'); box.className = 'box';
       modal.appendChild(box);
 
-      // Title & summary
       const h = document.createElement('h3'); h.innerText = 'Confirmer la transaction';
       const small = document.createElement('div'); small.className = 'small'; small.innerText = `Type: ${base.type} — ${base.from} → ${base.to}`;
       box.appendChild(h); box.appendChild(small);
 
-      // form
       const form = document.createElement('form');
       form.style.display = 'flex'; form.style.flexDirection = 'column'; form.style.gap = '8px';
       box.appendChild(form);
 
-      // personal info
       form.appendChild(createLabelInput('Prénom','firstName','text',true));
       form.appendChild(createLabelInput('Nom','lastName','text',true));
       form.appendChild(createLabelInput('Email','email','email',true));
       form.appendChild(createLabelInput('Téléphone','phone','text',true));
 
-      // dynamic container
       const dyn = document.createElement('div'); dyn.id = 'tx-dynamic'; dyn.style.display='flex'; dyn.style.flexDirection='column'; dyn.style.gap='8px';
       form.appendChild(dyn);
 
-      // compute amountTo
       const computeAmountTo = async () => {
         const rate = await findRate(base.from, base.to);
         return Number(base.amountFrom) * Number(rate);
       };
 
-      // build fields based on type
       (async function build(){
-        dyn.innerHTML = ''; // clear
+        dyn.innerHTML = '';
 
         if(base.type === 'crypto-fiat'){
-          // send network + show send address + choose reception method (fiat) + recv account
           dyn.appendChild(createLabel('Réseau d\'envoi'));
           const sendNet = buildNetworkSelect('sendNetwork');
           dyn.appendChild(sendNet);
@@ -306,7 +414,6 @@
 
           dyn.appendChild(createLabelInput('Compte / numéro de réception','recvAccount','text',true));
 
-          // events
           sendNet.addEventListener('change', async () => {
             const net = sendNet.value;
             const found = paymentsCache.find(p => (p.type||'') === 'crypto' && (p.network||'').toUpperCase() === (net||'').toUpperCase() && p.active);
@@ -316,17 +423,14 @@
             sendAddrBox.querySelector('#send-address').innerHTML = txt;
           });
 
-          // also allow showing selected recv method details on change
           recvMethodSelect.addEventListener('change', () => {
             const opt = recvMethodSelect.selectedOptions[0];
             let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
             if(!details){
-              // fallback search in cache by id
               const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
               const found = paymentsCache.find(p => String(p._id) === String(val));
               details = found ? (found.details || found.addressOrAccount || '') : '';
             }
-            // show ephemeral small note under select
             let note = dyn.querySelector('.recv-method-note');
             if(!note){ note = document.createElement('div'); note.className = 'recv-method-note muted'; dyn.appendChild(note); }
             note.innerHTML = details ? `Numéro / compte: <span style="font-family:monospace">${escapeHtml(details)}</span>` : 'Numéro / compte indisponible';
@@ -409,7 +513,6 @@
         }
       })();
 
-      // actions
       const actions = document.createElement('div');
       actions.style.display = 'flex'; actions.style.justifyContent='flex-end'; actions.style.gap = '8px'; actions.style.marginTop='10px';
       const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className='btn ghost'; cancel.innerText='Annuler';
@@ -419,11 +522,9 @@
 
       cancel.addEventListener('click', (e)=>{ e.preventDefault(); modal.remove(); });
 
-      // form submit
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         submit.disabled = true; submit.innerText = 'Envoi...';
-        // gather details
         const fd = new FormData(form);
         const details = {};
         for (const [k,v] of fd.entries()) details[k] = v;
@@ -437,7 +538,6 @@
           type: base.type,
           details
         };
-        // try to submit
         try {
           const token = localStorage.getItem('token');
           const headers = {'Content-Type':'application/json'};
@@ -446,7 +546,6 @@
           const j = await resp.json().catch(()=>null);
           if(resp.ok && j && j.success){
             alert('Transaction enregistrée (pending).');
-            // save locally as well for guest history
             const local = JSON.parse(localStorage.getItem('guestTx') || '[]');
             local.unshift({ ...tx, status: 'pending', createdAt: new Date().toISOString(), _id: j.transaction ? j.transaction._id : ('local_'+Date.now()) });
             localStorage.setItem('guestTx', JSON.stringify(local));
@@ -456,7 +555,6 @@
         }catch(err){
           console.warn('submit error', err);
         }
-        // fallback: save locally
         const local = JSON.parse(localStorage.getItem('guestTx') || '[]');
         local.unshift({ ...tx, status: 'pending', createdAt: new Date().toISOString(), _id: 'local_'+Date.now() });
         localStorage.setItem('guestTx', JSON.stringify(local));
@@ -464,16 +562,13 @@
         modal.remove(); window.location.href = '/historique';
       });
 
-      // close by clicking outside
       modal.addEventListener('click', (e)=> { if(e.target === modal) modal.remove(); });
 
       document.body.appendChild(modal);
-      // focus first input
       const first = form.querySelector('input[name="firstName"]');
       if(first) first.focus();
     }
 
-    // small helpers to create labeled inputs
     function createLabel(text){
       const l = document.createElement('label'); l.innerText = text; return l;
     }
@@ -486,7 +581,6 @@
     }
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-    // click submit main
     doBtn.addEventListener('click', async () => {
       const from = (fromEl.value || '').toUpperCase();
       const to = (toEl.value || '').toUpperCase();
@@ -497,16 +591,15 @@
       openTransactionModal({ from, to, amountFrom: amt, type });
     });
 
-    // init
     (async function init(){
       await loadPayments();
       await loadRatesOptions();
     })();
 
-    // expose for debugging
     window.PYExchange = { loadPayments, loadRatesOptions, paymentsCache };
   })();
   </script>
+
   <script src="/js/script.js"></script>
 </body>
 </html>
