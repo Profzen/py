@@ -275,3 +275,13 @@ label{font-weight:700;color:var(--text);display:block;margin-top:12px}
 
 /* utility to hide horizontal scrollbar if a little overflow occurs */
 html::-webkit-scrollbar { height: 12px; width: 12px; }
+
+/* background image + soft blue overlay */
+    body{
+      /* image in public/backi (you said you'll place it there) */
+      background:
+        linear-gradient(180deg, rgba(11,118,209,0.06), rgba(11,118,209,0.02)),
+        url('/backi') center/cover no-repeat;
+      /* keep a subtle base color fallback for areas where image doesn't cover */
+      background-color: #eaf4fb;
+    }
