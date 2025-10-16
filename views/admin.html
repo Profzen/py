@@ -12,11 +12,13 @@
     img{max-width:100%;height:auto;display:block}
     input,textarea,select,button{max-width:100%;box-sizing:border-box}
 
-    /* ===== Admin additions (kept in same theme) ===== */
     :root{
       --admin-card-bg: #ffffff;
       --admin-accent: #0b76d1;
       --muted-2: #6b7a83;
+      --text: #0b2940;
+      --news-collapse-lines: 5;
+      --loader-bg: rgba(12,18,24,0.55);
     }
 
     .admin-container{max-width:1200px;margin:0 auto;padding:18px;}
@@ -24,28 +26,23 @@
     .admin-header .brand{font-weight:800;color:var(--admin-accent);font-size:20px}
     .admin-header .meta{color:var(--muted-2);font-size:14px}
 
-    /* Admin top nav */
     .admin-top-nav{display:flex;gap:8px;align-items:center;margin-left:12px}
     .admin-top-nav .nav-btn{padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--admin-accent)}
     .admin-top-nav .nav-btn.active{background:linear-gradient(90deg,var(--admin-accent),#1fa9ff);color:#fff}
 
-    /* Transactions full width block */
     .tx-block{background:var(--admin-card-bg);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow);margin-bottom:16px}
     .tx-block .tx-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
     .tx-wrap{margin-top:12px}
 
-    /* Table style (desktop) */
     .tx-table{width:100%;border-collapse:collapse}
     .tx-table th,.tx-table td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:14px}
     .tx-table thead th{background:transparent;color:var(--muted)}
 
-    /* Card view (mobile) */
     .tx-cards{display:none;flex-direction:column;gap:12px}
     .tx-card{background:linear-gradient(180deg,#fff,#fbfeff);padding:12px;border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 24px rgba(8,30,50,0.04)}
     .tx-card .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
     .tx-card .muted{color:var(--muted)}
 
-    /* News editor & list */
     .two-col{display:grid;grid-template-columns:1fr 480px;gap:18px}
     .card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden}
     .card h3{margin:0 0 8px}
@@ -54,16 +51,32 @@
 
     .img-preview{max-width:100%;height:auto;border-radius:8px;margin-top:10px;object-fit:cover}
 
-    /* news list item */
-    .news-item{display:flex;gap:12px;align-items:center;padding:10px;border-radius:10px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
+    .news-item{display:flex;gap:12px;align-items:flex-start;padding:10px;border-radius:10px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
     .news-thumb{width:92px;height:64px;border-radius:8px;object-fit:cover;background:var(--soft);flex-shrink:0}
 
-    /* Rates */
+    .news-body{flex:1;min-width:0}
+    .news-title{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+    .news-meta{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .news-desc{color:var(--muted);margin-top:4px;white-space:normal}
+
+    /* collapse the content to N lines using max-height; supports both HTML with <br> and plain text (converted to <br>) */
+    .news-content{
+      margin-top:8px;
+      color:var(--text);
+      line-height:1.4;
+      display:block;
+      max-height: calc(var(--news-collapse-lines) * 1.4em);
+      overflow:hidden;
+      position:relative;
+    }
+    .news-toggle{
+      display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:13px;margin-top:8px;
+    }
+
     .rates-grid{display:flex;flex-direction:column;gap:8px}
     .rates-top{display:flex;gap:8px;align-items:center;margin-bottom:8px}
     .rates-search{padding:8px;border-radius:8px;border:1px solid var(--border);flex:1}
 
-    /* Payments section */
     .payments-grid{display:flex;flex-direction:column;gap:8px}
     .payments-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
     .payment-item{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
@@ -71,16 +84,11 @@
     .payment-form-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
     .payment-form-row input, .payment-form-row select { padding:8px;border-radius:8px;border:1px solid var(--border); }
 
-    /* helpers */
     .tiny{font-size:13px;color:var(--muted)}
     .actions{display:flex;gap:8px}
-
-    /* "Voir plus" */
     .tx-more{display:flex;justify-content:center;margin-top:10px}
 
-    /* responsive adjustments */
     @media (min-width:1200px){
-      /* give right column more space on large screens */
       .admin-container{max-width:1400px}
       .two-col{grid-template-columns:1fr 560px;gap:22px}
     }
@@ -95,19 +103,22 @@
       .admin-header .meta{order:2}
       .admin-top-nav{margin-left:0;margin-top:8px}
     }
-    @media (max-width:480px){
+    @media (max-width:768px){
       .news-thumb{width:72px;height:56px}
       .tx-card .row{flex-direction:column;align-items:flex-start}
       .payment-form-row{flex-direction:column}
-      /* prevent overflow from long text or inputs */
       .card, .payment-item, .news-item { word-break: break-word; min-width:0; }
+      .news-content{max-height: calc(var(--news-collapse-lines) * 1.3em); }
+    }
+    @media (max-width:480px){
+      .news-thumb{width:64px;height:48px}
+      .admin-container{padding:12px}
     }
 
-    /* small improvements for modal content */
     .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(12,18,24,0.45);z-index:20000;padding:18px}
     .modal .box{background:#fff;border-radius:12px;padding:16px;max-height:92vh;overflow:auto;box-shadow:0 18px 50px rgba(8,30,50,0.2);width:100%;max-width:900px}
-    .modal .box .kv{display:flex;justify-content:space-between;gap:12px}
-    .modal .box .kv .col{flex:1}
+    .modal .box .kv{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .modal .box .kv .col{flex:1;min-width:0}
     .modal .box .details{margin-top:10px;border-top:1px dashed var(--border);padding-top:10px}
     .modal .box .details dt{font-weight:700}
     .modal .box .details dd{margin:0 0 8px}
@@ -116,8 +127,33 @@
     .status-approved{background:#e9fff2;color:#0b7b3b;border:1px solid #bff0c9}
     .status-rejected{background:#ffecec;color:#a22b2b;border:1px solid #ffc9c9}
 
-    /* small UI tweaks to avoid horizontal overflow */
     .admin-container, .card, form, .payment-item { width:100%; min-width:0; }
+
+    .proof-preview{margin-top:12px;border:1px solid #eee;border-radius:8px;padding:8px;background:#fafafa}
+    .proof-preview img{max-width:100%;height:auto;border-radius:6px;display:block}
+    .proof-meta{font-size:13px;color:var(--muted);margin-top:6px}
+
+    .icon-btn { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:8px; border:1px solid var(--border); background:transparent; cursor:pointer; }
+
+    /* GLOBAL LOADER (blocking overlay) */
+    .global-loader {
+      display:none;
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: var(--loader-bg);
+      align-items: center;
+      justify-content: center;
+      pointer-events: all;
+    }
+    .global-loader.active { display:flex; }
+    .loader-box { background: #fff; padding: 20px 24px; border-radius: 12px; display:flex;gap:12px;align-items:center;box-shadow:0 12px 30px rgba(2,12,27,0.3) }
+    .loader-spinner {
+      width:36px;height:36px;border-radius:50%;border:4px solid #e6eef7;border-top-color:var(--admin-accent);animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text { font-weight:700;color:#05324a }
+
   </style>
 </head>
 <body>
@@ -164,7 +200,8 @@
             <textarea id="n-desc" rows="2" style="padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
 
             <label class="tiny" style="margin-top:8px">Contenu complet</label>
-            <textarea id="n-content" rows="6" style="padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
+            <!-- agrandi -->
+            <textarea id="n-content" rows="10" style="padding:8px;border-radius:8px;border:1px solid var(--border)"></textarea>
 
             <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
               <button id="publish-news" type="button" class="btn">Publier</button>
@@ -253,7 +290,7 @@
         </div>
       </aside>
     </section>
-    
+
 
     <!-- Transactions full width -->
     <section id="transactions-section" class="tx-block card" aria-labelledby="tx-title">
@@ -288,20 +325,17 @@
     <footer style="margin-top:18px" class="tiny muted">© PY Crypto — Admin</footer>
   </main>
 
+  <!-- GLOBAL BLOCKING LOADER -->
+  <div id="global-loader" class="global-loader" aria-hidden="true">
+    <div class="loader-box" role="status" aria-live="polite">
+      <div class="loader-spinner" aria-hidden="true"></div>
+      <div class="loader-text" id="global-loader-text">Traitement en cours…</div>
+    </div>
+  </div>
   <!-- Socket client -->
   <script src="/socket.io/socket.io.js"></script>
 
   <script>
-  /* ===================
-     admin front JS (updated)
-     - fixes:
-       * modal status update used wrong id -> now uses tx._id or tx.id fallback
-       * delegated event binding for payments/news actions (immediate and robust)
-       * removed horizontal scroll on mobile + overflow handling
-       * extra guards for missing ids and better logging
-     - endpoints used: /admin/upload, /admin/news, /admin/transactions, /admin/transactions/:id, /admin/transactions/:id/status, /api/rates, /admin/payment-methods, /api/payments
-     =================== */
-
   (function(){
     // helpers
     const $ = sel => document.querySelector(sel);
@@ -318,6 +352,28 @@
       const token = localStorage.getItem('token');
       if (token) opts.headers['Authorization'] = 'Bearer ' + token;
       return fetch(url, opts);
+    }
+
+    // Global loader utilities
+    const globalLoaderEl = $('#global-loader');
+    const globalLoaderText = $('#global-loader-text');
+    function showLoader(text='Traitement en cours…'){
+      if(globalLoaderEl){
+        globalLoaderText && (globalLoaderText.innerText = text);
+        globalLoaderEl.classList.add('active');
+        globalLoaderEl.setAttribute('aria-hidden','false');
+        // prevent scroll and pointer events on body
+        document.body.style.pointerEvents = 'none';
+        document.documentElement.style.overflow = 'hidden';
+      }
+    }
+    function hideLoader(){
+      if(globalLoaderEl){
+        globalLoaderEl.classList.remove('active');
+        globalLoaderEl.setAttribute('aria-hidden','true');
+        document.body.style.pointerEvents = '';
+        document.documentElement.style.overflow = '';
+      }
     }
 
     // token check
@@ -347,22 +403,40 @@
     const pmId = $('#pm-id'), pmName = $('#pm-name'), pmType = $('#pm-type'), pmNetwork = $('#pm-network'), pmDetails = $('#pm-details'), pmActive = $('#pm-active');
     const pmSave = $('#pm-save'), pmClear = $('#pm-clear');
 
-    // Upload helper (POST /admin/upload)
+    // Upload helper (tries multiple endpoints)
     async function uploadFileToServer(file){
       if(!file) return null;
+      // endpoints to try (order: most likely)
+      const candidates = ['/admin/upload','/api/upload-proof','/upload','/admin/upload-proof','/api/admin/upload'];
       const fd = new FormData();
       fd.append('file', file);
       const token = localStorage.getItem('token');
       const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-      const res = await fetch('/admin/upload', { method: 'POST', headers, body: fd });
-      const text = await res.text();
-      let json;
-      try { json = JSON.parse(text); } catch(e) { throw new Error('Upload failed (non-JSON response): ' + (text || '(empty)')); }
-      if(!res.ok || !json.success){
-        const errText = (json.error && (typeof json.error === 'string' ? json.error : (json.error.message||JSON.stringify(json.error)))) || json.message || ('status ' + res.status);
-        throw new Error('Upload failed: ' + errText);
+
+      for(const ep of candidates){
+        try {
+          const res = await fetch(ep, { method: 'POST', headers, body: fd });
+          const text = await res.text().catch(()=>null);
+          let json = null;
+          try { json = text ? JSON.parse(text) : null; } catch(e){ /* not json */ }
+          if(!res.ok || !json){
+            if(res.status === 404 || res.status === 405 || res.status === 501){
+              continue;
+            }
+          }
+          if(json && json.success){
+            return { url: json.url, public_id: json.public_id || null, mime: json.mime || json.mimeType || null };
+          } else if(res.ok && json){
+            return { url: json.url || json.file || null, public_id: json.public_id || null, mime: json.mime || null };
+          } else {
+            continue;
+          }
+        } catch(err){
+          console.warn('upload attempt failed for', ep, err && (err.message || err));
+          continue;
+        }
       }
-      return { url: json.url, public_id: json.public_id || null };
+      throw new Error('Aucun endpoint d\'upload disponible (checked multiple paths)');
     }
 
     /* ---------------------------
@@ -396,7 +470,6 @@
       const end = (txPage + 1) * TX_PAGE_SIZE;
       const pageItems = filtered.slice(0, end);
 
-      // desktop table
       if(pageItems.length === 0){
         txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Aucune transaction</td></tr>';
       } else {
@@ -421,7 +494,6 @@
           </tr>`; }).join('');
       }
 
-      // cards (mobile)
       txCards.innerHTML = pageItems.map(t => {
         const u = t.user ? (t.user.username || t.user.email) : 'Guest';
         const id = t._id || t.id || '';
@@ -437,7 +509,6 @@
         </div>`;
       }).join('');
 
-      // show/hide "Voir plus"
       const filteredCount = filtered.length;
       const loadMoreBtn = $('#tx-load-more');
       if(end < filteredCount){
@@ -447,7 +518,6 @@
       }
     }
 
-    // delegate tx actions (works for both table and cards)
     document.addEventListener('click', (ev) => {
       const btn = ev.target.closest('[data-action]');
       if(!btn) return;
@@ -466,7 +536,6 @@
       return `<span class="status-chip status-pending">${escapeHtml(status || 'pending')}</span>`;
     }
 
-    // "Voir plus" handler
     $('#tx-load-more').addEventListener('click', () => {
       txPage++;
       renderTransactionsPage(true);
@@ -474,11 +543,10 @@
 
     txFilter.addEventListener('input', () => { txPage = 0; renderTransactionsPage(); });
 
-    // escape
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
     /* ---------------------------
-       Transaction modal (readable) + status update fix
+       Transaction modal (readable) + proof display
        --------------------------- */
     window.viewTx = async function(id){
       try {
@@ -493,14 +561,12 @@
         const box = document.createElement('div'); box.className='box';
         box.style.maxWidth='720px';
 
-        // build user html
         let userHtml = '<div class="tiny muted">Guest</div>';
         if(tx.user){
           const u = tx.user.username || tx.user.email || '';
           userHtml = `<div><strong>${escapeHtml(u)}</strong><div class="tiny muted">${escapeHtml(tx.user.email||'')}</div></div>`;
         }
 
-        // build details list (object -> readable)
         const det = tx.details || {};
         let detHtml = '';
         if(Object.keys(det).length === 0){
@@ -515,8 +581,36 @@
           detHtml += '</dl>';
         }
 
-        // ensure we have an id to use
         const txId = tx._id || tx.id || id;
+
+        let proofHtml = '';
+        if(tx.proof && tx.proof.url){
+          const proofUrl = escapeHtml(tx.proof.url);
+          const mime = (tx.proof.mime || tx.proof.mimeType || '').toLowerCase();
+          if(mime.startsWith('image/') || /\.(jpeg|jpg|png|gif|webp)$/i.test(proofUrl)){
+            proofHtml = `
+              <div>
+                <h4>Preuve de paiement</h4>
+                <div class="proof-preview">
+                  <a href="${proofUrl}" target="_blank" rel="noopener">
+                    <img src="${proofUrl}" alt="Preuve de paiement" />
+                  </a>
+                  <div class="proof-meta">Type: ${escapeHtml(mime || 'image')} — <a href="${proofUrl}" target="_blank" rel="noopener">Ouvrir en grand</a></div>
+                </div>
+              </div>
+            `;
+          } else {
+            proofHtml = `
+              <div>
+                <h4>Preuve de paiement</h4>
+                <div class="proof-preview">
+                  <div><strong>Fichier :</strong> <a href="${proofUrl}" target="_blank" rel="noopener">Télécharger / Ouvrir la preuve</a></div>
+                  <div class="proof-meta">Type: ${escapeHtml(mime || 'fichier')}</div>
+                </div>
+              </div>
+            `;
+          }
+        }
 
         box.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center">
@@ -533,13 +627,18 @@
             </div>
           </div>
 
-          <div style="display:flex;gap:12px;margin-top:10px">
-            <div style="flex:1">
+          <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px">
               <div class="kv"><div class="col">${userHtml}</div><div class="col tiny muted">${new Date(tx.createdAt).toLocaleString()}</div></div>
               <div style="margin-top:8px"><strong>Pair:</strong> ${escapeHtml((tx.from||'') + ' → ' + (tx.to||''))}</div>
               <div style="margin-top:6px"><strong>Type:</strong> ${escapeHtml(tx.type||'')}</div>
               <div style="margin-top:6px"><strong>Montant:</strong> ${escapeHtml(String(tx.amountFrom||''))} → <strong>${escapeHtml(String(tx.amountTo||''))}</strong></div>
               <div style="margin-top:8px">${renderStatusChip(tx.status)}</div>
+            </div>
+
+            <div style="flex:1;min-width:220px">
+              <div style="margin-top:4px"><strong>ID :</strong> ${escapeHtml(txId)}</div>
+              <div style="margin-top:8px;color:var(--muted);font-size:13px">${escapeHtml(tx.details && tx.details.note ? String(tx.details.note) : '')}</div>
             </div>
           </div>
 
@@ -547,13 +646,14 @@
             <h4>Détails fournis</h4>
             ${detHtml}
           </div>
+
+          ${proofHtml}
         `;
 
         modal.appendChild(box); document.body.appendChild(modal);
         box.querySelector('#close-x').onclick = ()=> modal.remove();
         modal.onclick = (e)=> { if(e.target === modal) modal.remove(); };
 
-        // set status select to current
         const sel = box.querySelector('#modal-status-select');
         if(sel) sel.value = tx.status || 'pending';
 
@@ -562,11 +662,13 @@
           if(!confirm('Confirmer la mise à jour du statut ?')) return;
           if(!txId){ toast('ID transaction introuvable', false); return; }
           try {
+            showLoader('Mise à jour du statut…');
             const resp = await authFetch(`/admin/transactions/${txId}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status: newStatus }) });
             const body = await resp.json().catch(()=>null);
             if(resp.ok && body && body.success){ toast('Statut mis à jour'); loadTransactions(); modal.remove(); }
             else { console.error('status update failed', resp, body); toast('Erreur mise à jour', false); }
           } catch(e){ console.error(e); toast('Erreur', false); }
+          finally { hideLoader(); }
         };
 
       } catch(e){ console.error('viewTx err', e); toast('Erreur chargement détail', false); }
@@ -579,15 +681,16 @@
       if(!confirm('Confirmer la mise à jour du statut ?')) return;
       if(!id){ toast('ID transaction introuvable', false); return; }
       try {
-        const res = await authFetch(`/admin/transactions/${id}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status }) });
+        showLoader('Mise à jour du statut…');
+        const res = await authFetch('/admin/transactions/' + id + '/status', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status }) });
         const body = await res.json().catch(()=>null);
         if(res.ok && body && body.success){ toast('Statut mis à jour'); loadTransactions(); } else { console.error('setStatus failed', res, body); toast('Erreur', false); }
       } catch(e){ console.error(e); toast('Erreur', false); }
+      finally { hideLoader(); }
     };
 
     /* ---------------------------
-       NEWS logic (with \n -> <br> handling)
-       - use delegated events for edit/delete to avoid race conditions
+       NEWS logic
        --------------------------- */
     nFile.addEventListener('change', () => {
       const f = nFile.files[0];
@@ -609,18 +712,34 @@
     }
     function htmlBrToText(html){
       if(!html) return '';
-      return String(html).replace(/<br\s*\/?>/gi, '\n');
+      return String(html).replace(/<br\s*\/?>/gi,'\n').replace(/&lt;br\s*\/?&gt;/gi,'\n');
+    }
+
+    function formatContentForDisplay(content){
+      if(!content) return '';
+      const s = String(content);
+      if(/<\s*(br|p|div|span|h|ul|ol|li|strong|em)[\s>]/i.test(s)){
+        return s;
+      }
+      return s.replace(/\r\n/g,'\n').replace(/\n/g,'<br>');
     }
 
     publishBtn.addEventListener('click', async () => {
       const title = nTitle.value.trim(); if(!title){ alert('Titre requis'); return; }
       publishBtn.disabled = true; publishStatus.innerText = 'Publication...';
+      showLoader('Publication en cours…');
       try {
         let imageUrl = '', publicId = '';
-        if(nFile.files && nFile.files[0]){
-          const up = await uploadFileToServer(nFile.files[0]);
-          imageUrl = up.url; publicId = up.public_id;
+        if(nFile.files && nFile.files[0] && nFile.files[0].size > 0){
+          try {
+            const up = await uploadFileToServer(nFile.files[0]);
+            if(up && up.url){ imageUrl = up.url; publicId = up.public_id || ''; }
+          } catch(uerr){
+            console.warn('upload failed, continue publishing without image', uerr && (uerr.message||uerr));
+            toast('Upload image échoué — publication sans image', false);
+          }
         }
+
         const body = {
           title,
           description: textToHtmlWithBr(nDesc.value.trim()),
@@ -632,10 +751,10 @@
         const j = await res.json().catch(()=>null);
         if(res.ok && j && j.success){ toast('Publication réussie'); clearNewsForm(); loadNews(); } else { console.error('publish failed', res, j); toast('Erreur publication', false); alert((j && j.message) || 'Erreur'); }
       } catch(err){ console.error(err); toast('Erreur upload/publication', false); alert(String(err)); }
-      finally{ publishBtn.disabled=false; publishStatus.innerText=''; }
+      finally{ publishBtn.disabled=false; publishStatus.innerText=''; hideLoader(); }
     });
 
-    // update
+    // update - scroll to top of editor when editing
     window.editNews = function(id){
       const found = window.__newsCache && window.__newsCache.find(n => (n._id === id || n.id === id));
       if(!found) return alert('News introuvable');
@@ -645,15 +764,30 @@
       nContent.value = htmlBrToText(found.content || '');
       if(found.image){ nPreview.src = found.image; nPreview.style.display = 'block'; }
       publishBtn.style.display='none'; updateBtn.style.display='inline-block';
-      window.scrollTo({ top: 140, behavior: 'smooth' });
+      // scroll to top of news editor (anchor)
+      const editorEl = document.getElementById('news-section');
+      if(editorEl && typeof editorEl.scrollIntoView === 'function'){
+        editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     };
 
     updateBtn.addEventListener('click', async () => {
       const id = nId.value; if(!id) return alert('Aucune news sélectionnée');
       updateBtn.disabled = true; publishStatus.innerText = 'Mise à jour...';
+      showLoader('Mise à jour en cours…');
       try {
         let imageUrl = '', publicId = '';
-        if(nFile.files && nFile.files[0]){ const up = await uploadFileToServer(nFile.files[0]); imageUrl = up.url; publicId = up.public_id; }
+        if(nFile.files && nFile.files[0] && nFile.files[0].size > 0){
+          try {
+            const up = await uploadFileToServer(nFile.files[0]);
+            if(up && up.url){ imageUrl = up.url; publicId = up.public_id || ''; }
+          } catch(uerr){
+            console.warn('upload failed for update, continue without image', uerr && (uerr.message||uerr));
+            toast('Upload image échoué — mise à jour sans changer l\'image', false);
+          }
+        }
         const body = {
           id,
           title: nTitle.value.trim(),
@@ -666,41 +800,65 @@
         const j = await res.json().catch(()=>null);
         if(res.ok && j && j.success){ toast('Modification réussie'); clearNewsForm(); loadNews(); } else { console.error('update failed', res, j); toast('Erreur', false); alert((j && j.message) || 'Erreur'); }
       } catch(e){ console.error(e); toast('Erreur update', false); }
-      finally{ updateBtn.disabled=false; publishStatus.innerText=''; }
+      finally{ updateBtn.disabled=false; publishStatus.innerText=''; hideLoader(); }
     });
 
-    // delegated news actions (edit/delete) using data-id to avoid inline onclick issues
-    // renderNewsList will place elements with data attributes; here we bind high-level delegation to news-list container
+    // Render news list with collapse + toggle
     function renderNewsList(news){
       if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
       window.__newsCache = news;
       newsList.innerHTML = news.map(n => {
         const nid = (n._id || n.id || '');
         const when = new Date(n.date || n.createdAt || Date.now()).toLocaleString();
+        const contentRaw = n.content || '';
+        const descriptionRaw = n.description || '';
+        const contentHtml = formatContentForDisplay(contentRaw);
+        const descHtml = formatContentForDisplay(descriptionRaw);
         return `
           <div class="news-item" data-id="${escapeHtml(nid)}">
             ${n.image ? `<img class="news-thumb" src="${escapeHtml(n.image)}" alt="">` : `<div class="news-thumb"></div>`}
-            <div style="flex:1;min-width:0">
-              <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="news-body">
+              <div class="news-meta" style="align-items:flex-start">
                 <div style="min-width:0">
-                  <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(n.title)}</strong>
-                  <div class="tiny muted" style="margin-top:4px;white-space:normal">${n.description ? String(n.description) : ''}</div>
+                  <span class="news-title">${escapeHtml(n.title)}</span>
+                  <div class="tiny muted" style="margin-top:4px">${descHtml}</div>
                 </div>
                 <div class="tiny muted" style="margin-left:12px">${when}</div>
               </div>
-              <div style="margin-top:8px;color:var(--text);white-space:pre-wrap">${n.content ? String(n.content) : ''}</div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <button class="btn" data-news-id="${escapeHtml(nid)}" data-news-action="edit">Modifier</button>
-              <button class="btn ghost" data-news-id="${escapeHtml(nid)}" data-news-action="delete">Supprimer</button>
+              <div class="news-content collapsed" data-news-id="${escapeHtml(nid)}">${contentHtml}</div>
+              <div style="display:flex;gap:8px;align-items:center;justify-content:flex-start;margin-top:6px">
+                <button class="news-toggle" data-news-id="${escapeHtml(nid)}" aria-expanded="false">Afficher +</button>
+                <div style="margin-left:auto;display:flex;gap:6px">
+                  <button class="btn" data-news-id="${escapeHtml(nid)}" data-news-action="edit">Modifier</button>
+                  <button class="btn ghost" data-news-id="${escapeHtml(nid)}" data-news-action="delete">Supprimer</button>
+                </div>
+              </div>
             </div>
           </div>
         `;
       }).join('');
     }
 
-    // delegate news edit/delete clicks
+    // delegate news edit/delete clicks & toggle
     newsList.addEventListener('click', (ev) => {
+      const toggleBtn = ev.target.closest('.news-toggle');
+      if(toggleBtn){
+        const nid = toggleBtn.getAttribute('data-news-id');
+        const contentEl = document.querySelector(`.news-content[data-news-id="${CSS.escape(nid)}"]`);
+        if(!contentEl) return;
+        const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        if(expanded){
+          contentEl.style.maxHeight = `calc(var(--news-collapse-lines) * 1.4em)`;
+          toggleBtn.innerText = 'Afficher +';
+          toggleBtn.setAttribute('aria-expanded', 'false');
+        } else {
+          contentEl.style.maxHeight = 'none';
+          toggleBtn.innerText = 'Réduire';
+          toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        return;
+      }
+
       const editBtn = ev.target.closest('[data-news-action]');
       if(!editBtn) return;
       const action = editBtn.getAttribute('data-news-action');
@@ -713,14 +871,16 @@
       }
     });
 
-    // deleteNews uses id; guard if missing
     async function deleteNews(id){
       if(!id){ toast('ID news invalide', false); return; }
+      if(!confirm('Supprimer cette news ?')) return;
       try {
+        showLoader('Suppression en cours…');
         const res = await authFetch('/admin/news/' + id, { method:'DELETE' });
         const j = await res.json().catch(()=>null);
         if(res.ok && j && j.success){ toast('Suppression réussie'); loadNews(); } else { console.error('deleteNews failed', res, j); toast('Erreur suppression', false); alert((j && j.message) || 'Erreur'); }
       } catch(e){ console.error('deleteNews err', e); toast('Erreur suppression', false); }
+      finally{ hideLoader(); }
     }
 
     async function loadNews(){
@@ -759,15 +919,16 @@
       const pair = rPair.value.trim(); const rate = parseFloat(rValue.value);
       if(!pair || isNaN(rate)) return alert('Pair et valeur requis');
       try {
+        showLoader('Enregistrement taux…');
         const res = await authFetch('/admin/rates', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ pair, rate }) });
         const j = await res.json().catch(()=>null);
         if(res.ok && j && j.success){ toast('Taux ajouté/modifié'); rPair.value=''; rValue.value=''; loadRates(); } else { console.error('rates add failed', res, j); toast('Erreur rates', false); }
       } catch(e){ console.error(e); toast('Erreur', false); }
+      finally{ hideLoader(); }
     });
 
     /* ---------------------------
        PAYMENTS management (admin)
-       - use delegation to ensure buttons always work
        --------------------------- */
     let paymentsCache = [];
 
@@ -809,7 +970,6 @@
       }).join('');
     }
 
-    // delegate clicks inside pmListEl
     pmListEl.addEventListener('click', (ev) => {
       const btn = ev.target.closest('[data-pm-action]');
       if(!btn) return;
@@ -852,6 +1012,7 @@
       const active = !!pmActive.checked;
       if(!name) return alert('Nom requis');
       try {
+        showLoader('Enregistrement méthode…');
         const payload = { id, name, type, network, details, active };
         const res = await authFetch('/admin/payment-methods', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
         const j = await res.json().catch(()=>null);
@@ -866,13 +1027,14 @@
       } catch (err) {
         console.error(err);
         toast('Erreur serveur', false);
-      }
+      } finally { hideLoader(); }
     });
 
     async function deletePaymentMethod(id){
       if(!id) { toast('ID méthode introuvable', false); return; }
       if(!confirm('Supprimer cette méthode de paiement ?')) return;
       try {
+        showLoader('Suppression méthode…');
         const res = await authFetch('/admin/payment-methods/' + id, { method:'DELETE' });
         const j = await res.json().catch(()=>null);
         if(res.ok && j && j.success){
@@ -880,6 +1042,7 @@
           loadPayments();
         } else { console.error('pm delete failed', res, j); toast('Erreur suppression', false); }
       } catch(e){ console.error(e); toast('Erreur', false); }
+      finally{ hideLoader(); }
     }
 
     pmRefresh.addEventListener('click', () => { loadPayments(); });
@@ -893,18 +1056,18 @@
     $('#btn-seed-sample').addEventListener('click', async () => {
       if(!confirm('Créer une news test ?')) return;
       try {
+        showLoader('Création sample…');
         const body = { title: 'News test ' + new Date().toLocaleTimeString(), description:'sample', content:'contenu sample' };
         const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
         const j = await res.json().catch(()=>null);
         if(res.ok && j && j.success){ toast('Seed OK'); loadNews(); } else { toast('Erreur seed', false); console.error('seed failed', res, j); }
       } catch(e){ console.error(e); toast('Erreur', false); }
+      finally{ hideLoader(); }
     });
 
-    // Extend 'btn-refresh' to include payments
     $('#btn-refresh').addEventListener('click', ()=> { loadNews(); loadRates(); loadPayments(); });
     $('#btn-refresh-tx').addEventListener('click', ()=> { loadTransactions(); });
 
-    // nav buttons scroll
     document.querySelectorAll('.admin-top-nav .nav-btn').forEach(b => {
       b.addEventListener('click', (e) => {
         document.querySelectorAll('.admin-top-nav .nav-btn').forEach(x => x.classList.remove('active'));
@@ -916,10 +1079,9 @@
     });
 
     // initial load
-    // ok
     loadTransactions(); loadNews(); loadRates(); loadPayments();
 
-    // Expose functions for inline/backwards compatibility if needed
+    // expose if needed
     window.editNews = editNews; window.deleteNews = deleteNews; window.viewTx = viewTx; window.setStatus = setStatus;
   })();
   </script>
