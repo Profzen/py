@@ -58,6 +58,28 @@
     .news-item{display:flex;gap:12px;align-items:center;padding:10px;border-radius:10px;border:1px solid var(--border);background:linear-gradient(180deg,#fff,#fbfeff)}
     .news-thumb{width:92px;height:64px;border-radius:8px;object-fit:cover;background:var(--soft);flex-shrink:0}
 
+    /* clamp for news content (5 lines) */
+    .news-content { 
+      display: -webkit-box; 
+      -webkit-line-clamp: 5; 
+      -webkit-box-orient: vertical; 
+      overflow: hidden; 
+      max-height: 7.5em; /* fallback */
+      line-height: 1.5em;
+      white-space: normal;
+    }
+    .news-content.expanded {
+      -webkit-line-clamp: unset;
+      -webkit-box-orient: unset;
+      overflow: visible;
+      max-height: none;
+    }
+
+    /* small toggle button */
+    .news-toggle {
+      background: transparent; border: none; color: var(--admin-accent); cursor: pointer; font-weight:700; margin-left:8px;
+    }
+
     /* Rates */
     .rates-grid{display:flex;flex-direction:column;gap:8px}
     .rates-top{display:flex;gap:8px;align-items:center;margin-bottom:8px}
@@ -95,6 +117,10 @@
       .admin-header .meta{order:2}
       .admin-top-nav{margin-left:0;margin-top:8px}
     }
+    @media (max-width:820px){
+      .news-item { flex-direction:column; align-items:stretch; gap:8px; }
+      .news-thumb { width:100%; height:160px; object-fit:cover; border-radius:8px; }
+    }
     @media (max-width:480px){
       .news-thumb{width:72px;height:56px}
       .tx-card .row{flex-direction:column;align-items:flex-start}
@@ -118,6 +144,12 @@
 
     /* small UI tweaks to avoid horizontal overflow */
     .admin-container, .card, form, .payment-item { width:100%; min-width:0; }
+
+    /* proof image style in modal */
+    .tx-proof { margin-top:12px; border:1px solid #eee; padding:8px; border-radius:8px; max-width:100%; text-align:center; background:#fafafa; }
+    .tx-proof img { max-width:100%; height:auto; border-radius:6px; display:inline-block; }
+    .tx-proof a { color:var(--admin-accent); text-decoration:underline; }
+    .tx-proof .meta { font-size:13px; color:var(--muted); margin-top:6px; }
   </style>
 </head>
 <body>
@@ -294,12 +326,11 @@
   <script>
   /* ===================
      admin front JS (updated)
-     - fixes:
-       * modal status update used wrong id -> now uses tx._id or tx.id fallback
-       * delegated event binding for payments/news actions (immediate and robust)
-       * removed horizontal scroll on mobile + overflow handling
-       * extra guards for missing ids and better logging
-     - endpoints used: /admin/upload, /admin/news, /admin/transactions, /admin/transactions/:id, /admin/transactions/:id/status, /api/rates, /admin/payment-methods, /api/payments
+     - modifs:
+       * affichage preuve dans modal view
+       * clamp 5 lines for news content + toggle
+       * responsive tweaks
+     - endpoints used: /admin/upload, /admin/news, /admin/transactions, /admin/transactions/:id/status, /api/rates, /admin/payment-methods, /api/payments
      =================== */
 
   (function(){
@@ -362,7 +393,7 @@
         const errText = (json.error && (typeof json.error === 'string' ? json.error : (json.error.message||JSON.stringify(json.error)))) || json.message || ('status ' + res.status);
         throw new Error('Upload failed: ' + errText);
       }
-      return { url: json.url, public_id: json.public_id || null };
+      return { url: json.url, public_id: json.public_id || null, mime: json.mime || (file.type || '') };
     }
 
     /* ---------------------------
@@ -518,6 +549,33 @@
         // ensure we have an id to use
         const txId = tx._id || tx.id || id;
 
+        // build proof block (if any)
+        let proofHtml = '';
+        if(tx.proof && tx.proof.url){
+          const proofUrl = escapeHtml(tx.proof.url);
+          const mime = (tx.proof.mime || tx.proof.mimeType || '').toLowerCase();
+          const public_id = escapeHtml(tx.proof.public_id || tx.proof.publicId || '');
+          const isImage = mime.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(proofUrl);
+          if(isImage){
+            proofHtml = `
+              <div class="tx-proof">
+                <div><strong>Preuve de paiement</strong></div>
+                <div style="margin-top:8px"><a href="${proofUrl}" target="_blank" rel="noopener"><img alt="Preuve" src="${proofUrl}"></a></div>
+                <div class="meta">Type: ${escapeHtml(mime || 'image')} ${ public_id ? ' • ID: ' + public_id : '' }</div>
+                <div style="margin-top:6px"><a href="${proofUrl}" target="_blank" rel="noopener">Ouvrir la preuve dans une nouvelle fenêtre</a></div>
+              </div>
+            `;
+          } else {
+            proofHtml = `
+              <div class="tx-proof">
+                <div><strong>Preuve de paiement</strong></div>
+                <div style="margin-top:8px"><a href="${proofUrl}" target="_blank" rel="noopener">Télécharger / Voir la preuve</a></div>
+                <div class="meta">Type: ${escapeHtml(mime || 'fichier')} ${ public_id ? ' • ID: ' + public_id : '' }</div>
+              </div>
+            `;
+          }
+        }
+
         box.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center">
             <h3>Détails transaction</h3>
@@ -542,6 +600,8 @@
               <div style="margin-top:8px">${renderStatusChip(tx.status)}</div>
             </div>
           </div>
+
+          ${ proofHtml }
 
           <div class="details" style="margin-top:12px">
             <h4>Détails fournis</h4>
@@ -587,7 +647,7 @@
 
     /* ---------------------------
        NEWS logic (with \n -> <br> handling)
-       - use delegated events for edit/delete to avoid race conditions
+       - show only 5 lines by default with toggle button
        --------------------------- */
     nFile.addEventListener('change', () => {
       const f = nFile.files[0];
@@ -669,14 +729,14 @@
       finally{ updateBtn.disabled=false; publishStatus.innerText=''; }
     });
 
-    // delegated news actions (edit/delete) using data-id to avoid inline onclick issues
-    // renderNewsList will place elements with data attributes; here we bind high-level delegation to news-list container
+    // delegated news actions (edit/delete/toggle) using data attributes
     function renderNewsList(news){
       if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
       window.__newsCache = news;
       newsList.innerHTML = news.map(n => {
         const nid = (n._id || n.id || '');
         const when = new Date(n.date || n.createdAt || Date.now()).toLocaleString();
+        const contentHtml = n.content ? String(n.content) : '';
         return `
           <div class="news-item" data-id="${escapeHtml(nid)}">
             ${n.image ? `<img class="news-thumb" src="${escapeHtml(n.image)}" alt="">` : `<div class="news-thumb"></div>`}
@@ -688,23 +748,36 @@
                 </div>
                 <div class="tiny muted" style="margin-left:12px">${when}</div>
               </div>
-              <div style="margin-top:8px;color:var(--text);white-space:pre-wrap">${n.content ? String(n.content) : ''}</div>
+              <div style="margin-top:8px;color:var(--text);">
+                <div class="news-content" data-news-content-id="${escapeHtml(nid)}">${contentHtml}</div>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px">
-              <button class="btn" data-news-id="${escapeHtml(nid)}" data-news-action="edit">Modifier</button>
-              <button class="btn ghost" data-news-id="${escapeHtml(nid)}" data-news-action="delete">Supprimer</button>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="btn" data-news-id="${escapeHtml(nid)}" data-news-action="edit">Modifier</button>
+                <button class="btn ghost" data-news-id="${escapeHtml(nid)}" data-news-action="delete">Supprimer</button>
+                <button class="news-toggle" data-news-id="${escapeHtml(nid)}" data-news-action="toggle">Afficher</button>
+              </div>
             </div>
           </div>
         `;
       }).join('');
     }
 
-    // delegate news edit/delete clicks
+    // delegate news edit/delete/toggle clicks
     newsList.addEventListener('click', (ev) => {
-      const editBtn = ev.target.closest('[data-news-action]');
-      if(!editBtn) return;
-      const action = editBtn.getAttribute('data-news-action');
-      const id = editBtn.getAttribute('data-news-id');
+      const btn = ev.target.closest('[data-news-action]');
+      if(!btn) return;
+      const action = btn.getAttribute('data-news-action');
+      const id = btn.getAttribute('data-news-id');
+      if(action === 'toggle') {
+        // toggle content clamp
+        const content = document.querySelector(`[data-news-content-id="${id}"]`);
+        if(!content) return;
+        const expanded = content.classList.toggle('expanded');
+        btn.innerText = expanded ? 'Réduire' : 'Afficher';
+        return;
+      }
       if(!id) { toast('ID news introuvable', false); return; }
       if(action === 'edit') return editNews(id);
       if(action === 'delete') {
@@ -916,7 +989,6 @@
     });
 
     // initial load
-    // ok
     loadTransactions(); loadNews(); loadRates(); loadPayments();
 
     // Expose functions for inline/backwards compatibility if needed
