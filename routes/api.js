@@ -1,4 +1,7 @@
 // routes/api.js
+// Routes publiques et API (prices, market_chart, news, transactions, rates)
+// Mis à jour pour stocker la preuve (proof) dans details.proof si fournie.
+
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
@@ -8,7 +11,7 @@ const News = require('../models/News');
 const Rate = require('../models/Rate');
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
-const PaymentMethod = require('../models/PaymentMethod'); // <-- ton modèle de paiement
+const PaymentMethod = require('../models/PaymentMethod'); // Assure-toi que ce modèle existe
 
 const mailer = require('./mail');
 
@@ -18,6 +21,7 @@ const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3
 let pricesCache = null, pricesFetched = 0;
 const PRICES_TTL = 30 * 1000;
 
+// GET /api/prices
 router.get('/prices', async (req, res) => {
   try {
     const now = Date.now();
@@ -95,7 +99,7 @@ router.get('/payments', async (req, res) => {
   }
 });
 
-// --- helper: getUserFromHeader ---
+// --- helper: getUserFromHeader (returns user or null) ---
 async function getUserFromHeader(req) {
   try {
     const auth = req.headers['authorization'] || '';
@@ -113,15 +117,39 @@ async function getUserFromHeader(req) {
   }
 }
 
-// --- transactions ---
+/**
+ * POST /api/transactions
+ * - Accepte transactions même sans token (guest).
+ * - Peut recevoir un objet `proof` (body.proof) => sera stocké dans details.proof
+ * - Forcer status: 'pending'
+ * - Structure attendue dans body: { from, to, amountFrom, amountTo, type, details, proof }
+ */
 router.post('/transactions', async (req, res) => {
   try {
-    const { from, to, amountFrom, amountTo, type, details } = req.body || {};
+    const { from, to, amountFrom, amountTo, type, details: rawDetails, proof } = req.body || {};
+
+    // basic validation
     if (!from || !to || typeof amountFrom === 'undefined' || typeof amountTo === 'undefined') {
       return res.status(400).json({ success: false, message: 'Champs requis: from, to, amountFrom, amountTo' });
     }
 
-    const user = await getUserFromHeader(req);
+    const user = await getUserFromHeader(req); // may be null -> guest allowed
+
+    // normalize details: ensure it's an object
+    let details = {};
+    if (rawDetails && typeof rawDetails === 'object') details = { ...rawDetails };
+    // If a separate proof object provided in body, attach it under details.proof
+    if (proof && typeof proof === 'object') {
+      // keep only url, public_id, mimeType if present
+      const p = {};
+      if (proof.url) p.url = proof.url;
+      if (proof.public_id) p.public_id = proof.public_id;
+      if (proof.mimeType) p.mimeType = proof.mimeType;
+      if (Object.keys(p).length > 0) details.proof = p;
+    } else if (details.proof && typeof details.proof === 'string') {
+      // if client sent details.proof as a string (url), convert to object
+      details.proof = { url: details.proof };
+    }
 
     const txDoc = await Transaction.create({
       user: user ? user._id : null,
@@ -130,18 +158,21 @@ router.post('/transactions', async (req, res) => {
       amountFrom: Number(amountFrom),
       amountTo: Number(amountTo),
       details: details || {},
-      status: 'pending',
+      status: 'pending',      // force pending by default
       createdAt: new Date()
     });
 
+    // emit newTransaction via socket.io (admins can listen)
     try { global.io && global.io.emit('newTransaction', txDoc); } catch (e) { console.warn('socket emit failed', e); }
 
+    // determine client email (either from logged user or details.email)
     let clientEmail = null;
     if (user && user.email) clientEmail = user.email;
     else if (details && typeof details === 'object') {
       clientEmail = details.email || details.emailAddress || details.mail || null;
     }
 
+    // send emails (best-effort)
     try {
       mailer.sendTransactionCreated(txDoc, clientEmail).catch(err => {
         console.warn('mailer.sendTransactionCreated failed', err && err.message ? err.message : err);
@@ -157,15 +188,25 @@ router.post('/transactions', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/transactions
+ * - ?mine=1 -> return user's transactions if token present (else [] for guests)
+ * - otherwise -> public listing (admin should use /admin/transactions)
+ */
 router.get('/transactions', async (req, res) => {
   try {
     const mine = req.query.mine === '1';
     const user = await getUserFromHeader(req);
     let txs;
     if (mine) {
-      if (user) txs = await Transaction.find({ user: user._id }).sort({ createdAt: -1 });
-      else txs = [];
+      if (user) {
+        txs = await Transaction.find({ user: user._id }).sort({ createdAt: -1 });
+      } else {
+        // guest: frontend uses localStorage; keep empty to indicate none on server
+        txs = [];
+      }
     } else {
+      // public listing (not paginated here) - admin UI should prefer /admin/transactions
       txs = await Transaction.find().populate('user').sort({ createdAt: -1 }).limit(1000);
     }
     res.json(txs);

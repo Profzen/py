@@ -2,9 +2,10 @@
 // Module d'envoi d'e-mails via nodemailer
 // - Gère le cas de certificats autosignés pour dev via SMTP_ALLOW_SELF_SIGNED=true
 // - Fournit fallback test (ethereal) si SMTP pas configuré (optionnel)
-// Usage: configure via .env (voir README below)
 
 const nodemailer = require('nodemailer');
+const url = require('url');
+const path = require('path');
 
 const ADMIN_MAIL = process.env.ADMIN_EMAIL || 'Profzzen@gmail.com';
 const MAIL_FROM = process.env.MAIL_FROM || `PY Crypto <no-reply@yourdomain.com>`;
@@ -15,7 +16,6 @@ const smtpConfig = {
   port: Number(process.env.SMTP_PORT || 587),
   secure: (process.env.SMTP_SECURE === 'true') || false, // true for 465
   auth: undefined,
-  // tls may be attached below depending on env
 };
 
 if (process.env.SMTP_USER) {
@@ -25,8 +25,7 @@ if (process.env.SMTP_USER) {
   };
 }
 
-// Option to allow self-signed certs for development/testing only.
-// Set SMTP_ALLOW_SELF_SIGNED=true in .env to enable (not recommended in prod).
+// Allow self-signed certs in dev if requested
 if (process.env.SMTP_ALLOW_SELF_SIGNED === 'true') {
   smtpConfig.tls = smtpConfig.tls || {};
   smtpConfig.tls.rejectUnauthorized = false;
@@ -39,8 +38,8 @@ let usingEthereal = false;
 async function createTransporter() {
   if (transporter) return transporter;
 
-  // If no SMTP host provided, create an ethereal test account (dev only)
   if (!smtpConfig.host) {
+    // Ethereal fallback for dev
     try {
       const testAccount = await nodemailer.createTestAccount();
       transporter = nodemailer.createTransport({
@@ -62,43 +61,118 @@ async function createTransporter() {
     transporter = nodemailer.createTransport(smtpConfig);
   }
 
-  // verify (best-effort)
   try {
     await transporter.verify();
     console.log('✅ SMTP transporter ready');
   } catch (err) {
     console.warn('⚠️ SMTP verify failed (check .env):', err && err.message ? err.message : err);
-    // keep transporter even if verify failed (we'll attempt send and log errors)
   }
   return transporter;
 }
 
 function escapeHtml(s) {
-  if (!s) return '';
+  if (s === null || typeof s === 'undefined') return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function briefTxHtml(tx, clientEmail) {
-  const lines = [
-    `<p><strong>ID :</strong> ${tx._id}</p>`,
-    `<p><strong>Type :</strong> ${escapeHtml(tx.type || '')}</p>`,
-    `<p><strong>Pair :</strong> ${escapeHtml(tx.from || '')} → ${escapeHtml(tx.to || '')}</p>`,
-    `<p><strong>Montant envoyé :</strong> ${escapeHtml(String(tx.amountFrom || ''))}</p>`,
-    `<p><strong>Montant reçu estimé :</strong> ${escapeHtml(String(tx.amountTo || ''))}</p>`,
-    `<p><strong>Statut :</strong> ${escapeHtml(tx.status || '')}</p>`,
-    clientEmail ? `<p><strong>Client email :</strong> ${escapeHtml(clientEmail)}</p>` : '',
-    `<h4>Détails fournis</h4>`,
-    `<pre style="white-space:pre-wrap;border:1px solid #eee;padding:8px;border-radius:6px">${escapeHtml(JSON.stringify(tx.details || {}, null, 2))}</pre>`,
-    `<p>Créée le : ${new Date(tx.createdAt || Date.now()).toLocaleString()}</p>`
-  ];
-  return lines.join('\n');
+function renderDetailsHtml(details) {
+  if (!details || typeof details !== 'object') return '<em>Aucun détail fourni</em>';
+  const rows = Object.keys(details).map(k => {
+    const v = details[k];
+    const val = (typeof v === 'object') ? escapeHtml(JSON.stringify(v, null, 2)) : escapeHtml(String(v));
+    return `<tr><td style="padding:6px 10px;border:1px solid #eee;font-weight:600;background:#fafafa;width:200px">${escapeHtml(k)}</td><td style="padding:6px 10px;border:1px solid #eee">${val}</td></tr>`;
+  });
+  return `<table style="border-collapse:collapse;margin-top:8px">${rows.join('')}</table>`;
 }
 
-function briefTxText(tx, clientEmail) {
+/**
+ * Build summary HTML.
+ * includeProof: boolean -> whether to include/embed proof section.
+ * attachments: optional array of nodemailer attachments (used to check cid presence)
+ */
+function briefTxHtml(tx, clientEmail, includeProof = false, attachments = []) {
+  const created = new Date(tx.createdAt || Date.now()).toLocaleString();
+  const proof = tx.proof && typeof tx.proof === 'object' ? tx.proof : null;
+
+  let html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#0b2b3a">
+      <h2 style="margin:0 0 8px;color:#0b76d1">PY Crypto — Détails transaction</h2>
+      <p style="margin:8px 0">Récapitulatif de la transaction <strong>${escapeHtml(String(tx._id || ''))}</strong></p>
+
+      <table style="width:100%;border-collapse:collapse;margin-top:8px">
+        <tr>
+          <td style="padding:8px;border:1px solid #eee;width:180px;background:#f7fafc"><strong>Type</strong></td>
+          <td style="padding:8px;border:1px solid #eee">${escapeHtml(tx.type || '')}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #eee;background:#f7fafc"><strong>Paire</strong></td>
+          <td style="padding:8px;border:1px solid #eee">${escapeHtml(tx.from || '')} → ${escapeHtml(tx.to || '')}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #eee;background:#f7fafc"><strong>Montant envoyé</strong></td>
+          <td style="padding:8px;border:1px solid #eee">${escapeHtml(String(tx.amountFrom || ''))}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #eee;background:#f7fafc"><strong>Montant reçu estimé</strong></td>
+          <td style="padding:8px;border:1px solid #eee">${escapeHtml(String(tx.amountTo || ''))}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;border:1px solid #eee;background:#f7fafc"><strong>Statut</strong></td>
+          <td style="padding:8px;border:1px solid #eee">${escapeHtml(tx.status || '')}</td>
+        </tr>
+        ${clientEmail ? `<tr><td style="padding:8px;border:1px solid #eee;background:#f7fafc"><strong>Client</strong></td><td style="padding:8px;border:1px solid #eee">${escapeHtml(clientEmail)}</td></tr>` : ''}
+        <tr>
+          <td style="padding:8px;border:1px solid #eee;background:#f7fafc"><strong>Créée le</strong></td>
+          <td style="padding:8px;border:1px solid #eee">${escapeHtml(created)}</td>
+        </tr>
+      </table>
+  `;
+
+  if (includeProof && proof && proof.url) {
+    const proofUrl = escapeHtml(proof.url);
+    const mime = (proof.mimeType || '').toLowerCase();
+    const isImage = mime.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(proofUrl);
+
+    html += `<div style="margin-top:12px"><h4 style="margin:6px 0 6px;color:#0b76d1">Preuve de paiement</h4>`;
+
+    if (isImage) {
+      const cid = `txproof_${tx._id}`;
+      const hasCid = attachments && attachments.find(a => a.cid === cid);
+      if (hasCid) {
+        html += `<div style="margin:8px 0"><img src="cid:${cid}" alt="Preuve de paiement" style="max-width:420px;border:1px solid #eee;border-radius:6px" /></div>`;
+        html += `<p style="margin:6px 0"><a href="${proofUrl}" target="_blank" rel="noopener">Ouvrir la preuve dans le navigateur</a></p>`;
+      } else {
+        html += `<div style="margin:8px 0"><img src="${proofUrl}" alt="Preuve de paiement" style="max-width:420px;border:1px solid #eee;border-radius:6px" /></div>`;
+        html += `<p style="margin:6px 0"><a href="${proofUrl}" target="_blank" rel="noopener">Ouvrir la preuve</a></p>`;
+      }
+    } else {
+      html += `<p style="margin:6px 0">Fichier de preuve : <a href="${proofUrl}" target="_blank" rel="noopener">Télécharger / Voir la preuve</a></p>`;
+    }
+
+    html += `</div>`;
+  }
+
+  // Détails fournis
+  html += `<div style="margin-top:12px"><h4 style="margin:6px 0 6px;color:#0b76d1">Détails fournis</h4>`;
+  html += renderDetailsHtml(tx.details || {});
+  html += `</div>`;
+
+  html += `<div style="margin-top:14px;font-size:13px;color:#666">Cordialement,<br/>L'équipe PY Crypto</div>`;
+  html += `</div>`;
+
+  return html;
+}
+
+/**
+ * Plain text summary. includeProof boolean controls whether proof URL is included.
+ */
+function briefTxText(tx, clientEmail, includeProof = false) {
   let txt = `Transaction ID: ${tx._id}\nType: ${tx.type || ''}\nPair: ${tx.from || ''} -> ${tx.to || ''}\nMontant envoyé: ${tx.amountFrom}\nMontant reçu estimé: ${tx.amountTo}\nStatut: ${tx.status}\n`;
   if (clientEmail) txt += `Client email: ${clientEmail}\n`;
-  txt += `Détails: ${JSON.stringify(tx.details || {}, null, 2)}\n`;
-  txt += `Créée le: ${new Date(tx.createdAt || Date.now()).toLocaleString()}\n`;
+  txt += `Créée le: ${new Date(tx.createdAt || Date.now()).toLocaleString()}\n\nDétails:\n${JSON.stringify(tx.details || {}, null, 2)}\n`;
+  if (includeProof && tx.proof && tx.proof.url) {
+    txt += `Preuve: ${tx.proof.url}\n`;
+  }
   return txt;
 }
 
@@ -106,7 +180,6 @@ async function sendMailSafe(mailOptions) {
   try {
     const tr = await createTransporter();
     const info = await tr.sendMail(mailOptions);
-    // For ethereal, log preview url
     if (usingEthereal && info && info.messageId) {
       console.log('Mail sent (ethereal). Preview URL:', nodemailer.getTestMessageUrl(info));
     }
@@ -118,63 +191,118 @@ async function sendMailSafe(mailOptions) {
 }
 
 /**
- * Envoie mail après création transaction (admin + client if available)
+ * sendTransactionCreated:
+ * - client receives summary WITHOUT any proof (no link, no image)
+ * - admin receives summary WITH proof (inline image if image-type, otherwise link)
  */
 async function sendTransactionCreated(tx, clientEmail) {
+  // prepare admin attachments if proof is image-like
+  const attachments = [];
+  const proof = tx.proof && typeof tx.proof === 'object' ? tx.proof : null;
+  if (proof && proof.url) {
+    const mime = (proof.mimeType || '').toLowerCase();
+    const isImage = mime.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(proof.url);
+    if (isImage) {
+      const cid = `txproof_${tx._id}`;
+      const filename = path.basename(url.parse(proof.url).pathname || `proof_${tx._id}`);
+      attachments.push({
+        filename,
+        path: proof.url, // remote URL (cloudinary) or local public URL
+        cid
+      });
+    }
+  }
+
+  // Client mail (NO proof)
   const subjectClient = `Confirmation : transaction initialisée (${tx._id})`;
-  const htmlClient = `<p>Bonjour,</p>
-    <p>Votre transaction a bien été enregistrée et est en statut <strong>pending</strong>.</p>
-    ${briefTxHtml(tx, clientEmail)}
-    <p>Cordialement,<br>PY Crypto</p>`;
-  const textClient = `Bonjour,\n\nVotre transaction a bien été enregistrée et est en statut pending.\n\n${briefTxText(tx, clientEmail)}\n\nCordialement,\nPY Crypto`;
+  const textClient = `Bonjour,\n\nVotre transaction a bien été enregistrée et est en statut pending.\n\n${briefTxText(tx, clientEmail, false)}\n\nCordialement,\nPY Crypto`;
+  const htmlClient = `<div>${briefTxHtml(tx, clientEmail, false)}</div>`;
 
+  // Admin mail (INCLUDE proof if any)
   const subjectAdmin = `[ADMIN] Nouvelle transaction (${tx._id})`;
-  const htmlAdmin = `<p>Nouvelle transaction enregistrée :</p>${briefTxHtml(tx, clientEmail)}`;
-  const textAdmin = `Nouvelle transaction créée:\n\n${briefTxText(tx, clientEmail)}`;
+  const textAdmin = `Nouvelle transaction créée:\n\n${briefTxText(tx, clientEmail, true)}`;
+  const htmlAdmin = `<div><h3>Nouvelle transaction enregistrée</h3>${briefTxHtml(tx, clientEmail, true, attachments)}</div>`;
 
-  const sends = [];
+  const promises = [];
+
+  // Send client mail if email present
   if (clientEmail) {
-    sends.push(sendMailSafe({
+    promises.push(sendMailSafe({
       from: MAIL_FROM,
       to: clientEmail,
       subject: subjectClient,
       text: textClient,
       html: htmlClient
+      // no attachments for client
     }));
   }
 
-  sends.push(sendMailSafe({
+  // Send admin mail (include attachments if present)
+  promises.push(sendMailSafe({
     from: MAIL_FROM,
     to: ADMIN_MAIL,
     subject: subjectAdmin,
     text: textAdmin,
-    html: htmlAdmin
+    html: htmlAdmin,
+    attachments: attachments.length ? attachments : undefined
   }));
 
-  const results = await Promise.all(sends);
+  const results = await Promise.all(promises);
   return results;
 }
 
 /**
- * Envoie mail au client lors d'un changement de statut
+ * sendTransactionStatusChanged:
+ * - client: receives status update WITHOUT proof
+ * - admin: receives status update WITH proof if available
  */
 async function sendTransactionStatusChanged(tx, clientEmail) {
   if (!clientEmail) return { ok: false, error: 'no-client-email' };
 
-  const subject = `Mise à jour statut transaction (${tx._id}) : ${tx.status}`;
-  const html = `<p>Bonjour,</p>
-    <p>Le statut de votre transaction <strong>${tx._id}</strong> a été mis à jour : <strong>${escapeHtml(tx.status || '')}</strong>.</p>
-    ${briefTxHtml(tx, clientEmail)}
-    <p>Cordialement,<br>PY Crypto</p>`;
-  const text = `Bonjour,\n\nLe statut de votre transaction ${tx._id} a été mis à jour: ${tx.status}\n\n${briefTxText(tx, clientEmail)}\n\nCordialement,\nPY Crypto`;
+  // prepare admin attachments if proof is image-like
+  const attachments = [];
+  const proof = tx.proof && typeof tx.proof === 'object' ? tx.proof : null;
+  if (proof && proof.url) {
+    const mime = (proof.mimeType || '').toLowerCase();
+    const isImage = mime.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(proof.url);
+    if (isImage) {
+      const cid = `txproof_${tx._id}`;
+      const filename = path.basename(url.parse(proof.url).pathname || `proof_${tx._id}`);
+      attachments.push({
+        filename,
+        path: proof.url,
+        cid
+      });
+    }
+  }
 
-  return await sendMailSafe({
-    from: MAIL_FROM,
-    to: clientEmail,
-    subject,
-    text,
-    html
-  });
+  const subjectClient = `Mise à jour statut transaction (${tx._id}) : ${tx.status}`;
+  const textClient = `Bonjour,\n\nLe statut de votre transaction ${tx._id} a été mis à jour: ${tx.status}\n\n${briefTxText(tx, clientEmail, false)}\n\nCordialement,\nPY Crypto`;
+  const htmlClient = `<div>${briefTxHtml(tx, clientEmail, false)}</div>`;
+
+  const subjectAdmin = `[ADMIN] Mise à jour statut transaction (${tx._id}) : ${tx.status}`;
+  const textAdmin = `Transaction ${tx._1d} statut: ${tx.status}\n\n${briefTxText(tx, clientEmail, true)}`;
+  const htmlAdmin = `<div><h3>Mise à jour statut</h3>${briefTxHtml(tx, clientEmail, true, attachments)}</div>`;
+
+  const results = await Promise.all([
+    sendMailSafe({
+      from: MAIL_FROM,
+      to: clientEmail,
+      subject: subjectClient,
+      text: textClient,
+      html: htmlClient
+    }),
+    sendMailSafe({
+      from: MAIL_FROM,
+      to: ADMIN_MAIL,
+      subject: subjectAdmin,
+      text: textAdmin,
+      html: htmlAdmin,
+      attachments: attachments.length ? attachments : undefined
+    })
+  ]);
+
+  return results;
 }
 
 module.exports = {
