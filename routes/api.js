@@ -1,6 +1,6 @@
 // routes/api.js
-// Routes publiques et API (prices, market_chart, news, transactions, rates)
-// Mis à jour pour stocker la preuve (proof) dans details.proof si fournie.
+// Routes publiques et API (prices, market_chart, news, transactions, currencies, price pair)
+// Mis à jour pour travailler avec Rate (devises) et CoinGecko pour cours en temps réel.
 
 const express = require('express');
 const router = express.Router();
@@ -8,20 +8,21 @@ const axios = require('axios');
 const jwt = require('jsonwebtoken');
 
 const News = require('../models/News');
-const Rate = require('../models/Rate');
+const Rate = require('../models/Rate'); // maintenant devise (symbol, type, decimals, enabled)
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
-const PaymentMethod = require('../models/PaymentMethod'); // Assure-toi que ce modèle existe
+let PaymentMethod;
+try { PaymentMethod = require('../models/PaymentMethod'); } catch (e) { PaymentMethod = null; }
 
 const mailer = require('./mail');
 
 const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3';
 
-// --- prices cache (simple) ---
+// --- prices cache (simple) (existing route) ---
 let pricesCache = null, pricesFetched = 0;
 const PRICES_TTL = 30 * 1000;
 
-// GET /api/prices
+// GET /api/prices (kept for legacy/simple list)
 router.get('/prices', async (req, res) => {
   try {
     const now = Date.now();
@@ -77,10 +78,22 @@ router.get('/news', async (req, res) => {
   }
 });
 
-// --- rates ---
+// --- currencies (anciennement rates list) ---
+router.get('/currencies', async (req, res) => {
+  try {
+    // retourne toutes les devises (admin UI pourra filtrer enabled)
+    const list = await Rate.find().sort({ symbol: 1 }).lean();
+    res.json({ success: true, currencies: list });
+  } catch (err) {
+    console.error('GET /api/currencies err', err);
+    res.status(500).json({ success: false, message: 'Impossible de récupérer currencies', error: String(err) });
+  }
+});
+
+// --- legacy /rates kept for compatibility (returns same as /currencies) ---
 router.get('/rates', async (req, res) => {
   try {
-    const rates = await Rate.find().sort({ pair: 1 });
+    const rates = await Rate.find().sort({ symbol: 1 });
     res.json(rates);
   } catch (err) {
     console.error('GET /api/rates err', err);
@@ -91,6 +104,7 @@ router.get('/rates', async (req, res) => {
 // --- payments ---
 router.get('/payments', async (req, res) => {
   try {
+    if (!PaymentMethod) return res.status(500).json({ error: 'PaymentMethod model non disponible' });
     const payments = await PaymentMethod.find().sort({ type: 1, name: 1 });
     res.json(payments);
   } catch (err) {
@@ -117,37 +131,205 @@ async function getUserFromHeader(req) {
   }
 }
 
+// --- mapping simple symbol -> coingecko id (common tokens)
+//  You can extend this map or implement a dynamic resolver via /coins/list if needed.
+const SYMBOL_TO_CG = {
+  'BTC': 'bitcoin',
+  'ETH': 'ethereum',
+  'USDT': 'tether',
+  'USDC': 'usd-coin',
+  'SOL': 'solana',
+  'BNB': 'binancecoin',
+  'ADA': 'cardano',
+  'DOGE': 'dogecoin',
+  'MATIC': 'matic-network',
+  'LTC': 'litecoin',
+  'XRP': 'ripple'
+};
+
+// Cache per pair (short TTL 15s to match UI)
+const pairCache = {}; // { key: { ts: <ms>, data: { market_price, platform_buy_price, platform_sell_price, timestamp, raw } } }
+const PAIR_TTL = 15 * 1000;
+
 /**
- * POST /api/transactions
- * - Accepte transactions même sans token (guest).
- * - Peut recevoir un objet `proof` (body.proof) => sera stocké dans details.proof
- * - Forcer status: 'pending'
- * - Structure attendue dans body: { from, to, amountFrom, amountTo, type, details, proof }
+ * Helper: resolveCoinGeckoId(symbolOrId)
+ * - If input looks like a known CoinGecko id (contains '-'), return as-is.
+ * - If symbol matches SYMBOL_TO_CG map, return corresponding id.
+ * - Otherwise try lowercased symbol (sometimes id == lowercase symbol).
  */
+function resolveCoinGeckoId(symbolOrId) {
+  if (!symbolOrId) return null;
+  const s = String(symbolOrId).trim();
+  if (s.includes('-')) return s.toLowerCase();
+  const up = s.toUpperCase();
+  if (SYMBOL_TO_CG[up]) return SYMBOL_TO_CG[up];
+  // fallback to lowercase symbol (may work for some coins)
+  return s.toLowerCase();
+}
+
+/**
+ * GET /api/price?from=USDT&to=XOF
+ * - from: symbol (crypto or fiat)
+ * - to: symbol (crypto or fiat)
+ *
+ * Returns:
+ * {
+ *   pair: "USDT-XOF",
+ *   market_price: <Number>, // price expressed as (to currency) per 1 unit of from currency
+ *   platform_buy_price: <Number>, // platform buys from client (client sells) = market * 0.995
+ *   platform_sell_price: <Number>, // platform sells to client (client buys) = market * 1.03
+ *   price_display: <Number> // (depending on optional direction param) - but we return both platform prices
+ *   timestamp: ISOString,
+ *   source: 'coingecko',
+ *   raw: {...}
+ * }
+ *
+ * Notes:
+ * - We round prices according to Rate.getDecimals(to)
+ */
+router.get('/price', async (req, res) => {
+  try {
+    const from = (req.query.from || '').trim();
+    const to = (req.query.to || '').trim();
+    if (!from || !to) return res.status(400).json({ success: false, message: 'Paramètres requis: from et to' });
+
+    const key = `${from.toUpperCase()}-${to.toUpperCase()}`;
+    const now = Date.now();
+    if (pairCache[key] && (now - pairCache[key].ts) < PAIR_TTL) {
+      return res.json({ success: true, pair: key, cached: true, ...pairCache[key].data });
+    }
+
+    // Determine whether 'from' is crypto or fiat by consulting Rate model (best-effort)
+    const fromDoc = await Rate.findOne({ symbol: from.toUpperCase() }).lean();
+    const toDoc = await Rate.findOne({ symbol: to.toUpperCase() }).lean();
+
+    // For CoinGecko, we need crypto id for the coin. If 'from' is crypto -> get its id.
+    // If 'from' is fiat and 'to' is crypto, we'll get price of the crypto in fiat (same endpoint).
+    let marketPrice = null;
+    let cgRaw = null;
+
+    // Strategy:
+    // 1) If from looks like known crypto symbol -> resolve id and request simple/price with vs_currencies=to (lowercase)
+    // 2) Else if to looks like crypto -> resolve id for 'to' and request price, then invert (price = 1 / price_to_in_from)
+    // 3) Else error.
+
+    const fromIsCrypto = fromDoc ? (fromDoc.type === 'crypto') : null;
+    const toIsCrypto = toDoc ? (toDoc.type === 'crypto') : null;
+
+    // Helper to call CoinGecko simple/price
+    async function fetchSimplePrice(ids, vs_currencies) {
+      const r = await axios.get(`${COINGECKO}/simple/price`, {
+        params: { ids, vs_currencies, include_last_updated_at: true },
+        timeout: 10000
+      });
+      return r.data;
+    }
+
+    // Case A: from is crypto -> price = price of 'from' in 'to' (common)
+    if (fromIsCrypto === true || (from.toUpperCase() !== to.toUpperCase() && resolveCoinGeckoId(from))) {
+      const fromId = resolveCoinGeckoId(from);
+      const vs = to.toLowerCase();
+      try {
+        const data = await fetchSimplePrice(fromId, vs);
+        // data example: { tether: { xof: 600, last_updated_at: 169... } }
+        if (data && data[fromId] && typeof data[fromId][vs] !== 'undefined') {
+          marketPrice = Number(data[fromId][vs]);
+          cgRaw = { data };
+        } else {
+          // if coin not found for vs_currency, fallback try swapping strategy below
+          marketPrice = null;
+        }
+      } catch (e) {
+        // continue to other strategies
+        console.warn('fetchSimplePrice failed (from->to)', e && e.message ? e.message : e);
+      }
+    }
+
+    // Case B: try reverse: if to is crypto -> get price of 'to' in 'from' and invert
+    if ((marketPrice === null || typeof marketPrice === 'undefined') && to) {
+      const toId = resolveCoinGeckoId(to);
+      if (toId) {
+        const vs = from.toLowerCase();
+        try {
+          const data = await fetchSimplePrice(toId, vs);
+          if (data && data[toId] && typeof data[toId][vs] !== 'undefined') {
+            const priceToInFrom = Number(data[toId][vs]); // price of 'to' in 'from' units
+            if (priceToInFrom > 0) {
+              marketPrice = 1 / priceToInFrom;
+              cgRaw = { data, inverted: true };
+            }
+          }
+        } catch (e) {
+          console.warn('fetchSimplePrice failed (to->from)', e && e.message ? e.message : e);
+        }
+      }
+    }
+
+    // If still null -> error (unable to fetch price)
+    if (marketPrice === null || typeof marketPrice === 'undefined' || Number.isNaN(marketPrice)) {
+      return res.status(500).json({
+        success: false,
+        message: `Impossible d'obtenir le cours pour la paire ${key}. Vérifiez que les symboles sont corrects et mappés.`,
+        hint: 'Assurez-vous que la devise crypto est mappée dans SYMBOL_TO_CG ou étendez la logique de résolution.'
+      });
+    }
+
+    // Compute platform prices
+    const platformBuy = marketPrice * 0.995;  // platform buys from client (client sells) -> -0.5%
+    const platformSell = marketPrice * 1.03;  // platform sells to client (client buys) -> +3%
+
+    // Determine decimals to format the returned prices: use 'to' decimals (price expressed in 'to' per 1 'from')
+    const decimals = await Rate.getDecimals(to.toUpperCase()).catch(() => 2);
+    const formatTo = await Rate.formatAmount(to.toUpperCase(), marketPrice);
+    const formatPlatformBuy = await Rate.formatAmount(to.toUpperCase(), platformBuy);
+    const formatPlatformSell = await Rate.formatAmount(to.toUpperCase(), platformSell);
+
+    const payload = {
+      pair: key,
+      market_price: Number(formatTo),
+      platform_buy_price: Number(formatPlatformBuy),
+      platform_sell_price: Number(formatPlatformSell),
+      // provide unrounded raw values too for any advanced consumer
+      raw_market_price: marketPrice,
+      raw_platform_buy_price: platformBuy,
+      raw_platform_sell_price: platformSell,
+      timestamp: new Date().toISOString(),
+      source: 'coingecko',
+      raw: cgRaw
+    };
+
+    // store in cache
+    pairCache[key] = { ts: Date.now(), data: payload };
+
+    return res.json({ success: true, pair: key, cached: false, ...payload });
+  } catch (err) {
+    console.error('GET /api/price err', err && (err.message || err));
+    return res.status(500).json({ success: false, message: 'Erreur récupération prix', error: String(err) });
+  }
+});
+
+// --- transactions (create + listing) ---
+// POST /api/transactions
 router.post('/transactions', async (req, res) => {
   try {
     const { from, to, amountFrom, amountTo, type, details: rawDetails, proof } = req.body || {};
 
-    // basic validation
     if (!from || !to || typeof amountFrom === 'undefined' || typeof amountTo === 'undefined') {
       return res.status(400).json({ success: false, message: 'Champs requis: from, to, amountFrom, amountTo' });
     }
 
-    const user = await getUserFromHeader(req); // may be null -> guest allowed
+    const user = await getUserFromHeader(req);
 
-    // normalize details: ensure it's an object
     let details = {};
     if (rawDetails && typeof rawDetails === 'object') details = { ...rawDetails };
-    // If a separate proof object provided in body, attach it under details.proof
+
     if (proof && typeof proof === 'object') {
-      // keep only url, public_id, mimeType if present
       const p = {};
       if (proof.url) p.url = proof.url;
       if (proof.public_id) p.public_id = proof.public_id;
       if (proof.mimeType) p.mimeType = proof.mimeType;
       if (Object.keys(p).length > 0) details.proof = p;
     } else if (details.proof && typeof details.proof === 'string') {
-      // if client sent details.proof as a string (url), convert to object
       details.proof = { url: details.proof };
     }
 
@@ -158,21 +340,18 @@ router.post('/transactions', async (req, res) => {
       amountFrom: Number(amountFrom),
       amountTo: Number(amountTo),
       details: details || {},
-      status: 'pending',      // force pending by default
+      status: 'pending',
       createdAt: new Date()
     });
 
-    // emit newTransaction via socket.io (admins can listen)
     try { global.io && global.io.emit('newTransaction', txDoc); } catch (e) { console.warn('socket emit failed', e); }
 
-    // determine client email (either from logged user or details.email)
     let clientEmail = null;
     if (user && user.email) clientEmail = user.email;
     else if (details && typeof details === 'object') {
       clientEmail = details.email || details.emailAddress || details.mail || null;
     }
 
-    // send emails (best-effort)
     try {
       mailer.sendTransactionCreated(txDoc, clientEmail).catch(err => {
         console.warn('mailer.sendTransactionCreated failed', err && err.message ? err.message : err);
@@ -188,11 +367,7 @@ router.post('/transactions', async (req, res) => {
   }
 });
 
-/**
- * GET /api/transactions
- * - ?mine=1 -> return user's transactions if token present (else [] for guests)
- * - otherwise -> public listing (admin should use /admin/transactions)
- */
+// GET /api/transactions
 router.get('/transactions', async (req, res) => {
   try {
     const mine = req.query.mine === '1';
@@ -202,11 +377,9 @@ router.get('/transactions', async (req, res) => {
       if (user) {
         txs = await Transaction.find({ user: user._id }).sort({ createdAt: -1 });
       } else {
-        // guest: frontend uses localStorage; keep empty to indicate none on server
         txs = [];
       }
     } else {
-      // public listing (not paginated here) - admin UI should prefer /admin/transactions
       txs = await Transaction.find().populate('user').sort({ createdAt: -1 }).limit(1000);
     }
     res.json(txs);
