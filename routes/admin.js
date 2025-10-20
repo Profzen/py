@@ -1,5 +1,5 @@
 // routes/admin.js
-// Admin routes complete: news, transactions, rates (now currencies), + payment-methods
+// Admin routes complete: news, transactions, rates, + payment-methods
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
@@ -8,10 +8,10 @@ const mongoose = require('mongoose');
 
 const News = require('../models/News');
 const Transaction = require('../models/Transaction');
-const Rate = require('../models/Rate'); // now holds currencies (symbol, type, decimals, enabled)
+const Rate = require('../models/Rate');
 const User = require('../models/user');
 
-const mailer = require('./mail'); // mailer module
+const mailer = require('./mail'); // nouveau module mailer
 
 // cloudinary config
 cloudinary.config({
@@ -46,13 +46,16 @@ async function requireAdmin(req, res, next) {
 /* ---------- PAYMENT METHODS model bootstrap (use existing model if present) ---------- */
 let PaymentMethod;
 try {
+  // try to require an external model if it exists
   PaymentMethod = require('../models/PaymentMethod');
+  // if the module exports the model directly, ensure using it
   if (PaymentMethod && PaymentMethod.modelName) {
-    // ok
+    // likely the mongoose model itself, ok
   } else if (PaymentMethod && PaymentMethod.default && PaymentMethod.default.modelName) {
     PaymentMethod = PaymentMethod.default;
   }
 } catch (e) {
+  // fallback: define a minimal schema inline if models/PaymentMethod.js doesn't exist
   if (mongoose && !mongoose.models.PaymentMethod) {
     const pmSchema = new mongoose.Schema({
       name: { type: String, required: true },
@@ -188,14 +191,18 @@ router.post('/admin/transactions/:id/status', requireAdmin, async (req, res) => 
 
     // attempt to notify client by email
     try {
+      // try to obtain client email: prefer populated user
       let clientEmail = null;
       if (tx.user) {
+        // tx.user may be objectId or populated; try to fetch user email
         if (typeof tx.user === 'object' && tx.user.email) clientEmail = tx.user.email;
         else {
+          // try to populate
           const u = await User.findById(tx.user);
           if (u && u.email) clientEmail = u.email;
         }
       }
+      // fallback to details.email if present
       if (!clientEmail && tx.details && typeof tx.details === 'object') {
         clientEmail = tx.details.email || tx.details.emailAddress || null;
       }
@@ -216,127 +223,53 @@ router.post('/admin/transactions/:id/status', requireAdmin, async (req, res) => 
   }
 });
 
-/* ---------- RATES (now: CURRENCIES) (CRUD) ---------- */
+/* ---------- RATES (CRUD) ---------- */
 
-/**
- * GET /admin/rates
- * - Retourne la liste des devises (Rate documents)
- * - anciennement cette route renvoyait des paires/taux ; maintenant elle renvoie les devises disponibles
- */
+// GET rates
 router.get('/admin/rates', requireAdmin, async (req, res) => {
   try {
-    // use the model helper if present, otherwise find all
-    let rates;
-    if (typeof Rate.getActiveCurrencies === 'function') {
-      // return all (including disabled) so admin can manage them; use sort by symbol
-      rates = await Rate.find().sort({ symbol: 1 }).lean();
-    } else {
-      rates = await Rate.find().sort({ symbol: 1 }).lean();
-    }
-    return res.json({ success: true, rates });
+    const rates = await Rate.find().sort({ pair: 1 });
+    res.json(rates);
   } catch (err) {
     console.error('GET /admin/rates err', err);
-    res.status(500).json({ success: false, message: 'Impossible de récupérer currencies', error: String(err) });
+    res.status(500).json({ success: false, message: 'Impossible de récupérer rates', error: String(err) });
   }
 });
 
-/**
- * POST /admin/rates
- * - Create or update a currency document
- * Body expected:
- *  { id?, symbol, name?, type: 'crypto'|'fiat', decimals?, enabled? }
- *
- * Note: for compatibility, if body contains 'pair' or 'rate' we reject advising new usage.
- */
+// POST add/update rate
 router.post('/admin/rates', requireAdmin, async (req, res) => {
   try {
-    const { id, symbol, name, type, decimals, enabled, pair, rate } = req.body;
+    const { pair, rate, desc } = req.body;
+    if (!pair || typeof rate === 'undefined') return res.status(400).json({ success: false, message: 'pair et rate requis' });
 
-    // If old fields present (pair/rate), inform admin of new behavior
-    if (pair || typeof rate !== 'undefined') {
-      return res.status(400).json({
-        success: false,
-        message: 'Ancienne structure (pair/rate) non supportée. /admin/rates gère maintenant les devises. Envoyez { symbol, type, decimals?, enabled? }'
-      });
-    }
-
-    if (!symbol || !String(symbol).trim()) {
-      return res.status(400).json({ success: false, message: 'symbol requis (ex: USDT, XOF)' });
-    }
-    const sym = String(symbol).toUpperCase().trim();
-
-    // validate type
-    const t = (type && (type === 'crypto' || type === 'fiat')) ? type : null;
-    if (!t) return res.status(400).json({ success: false, message: 'type requis: "crypto" ou "fiat"' });
-
-    if (id) {
-      const doc = await Rate.findById(id);
-      if (!doc) return res.status(404).json({ success: false, message: 'Devise introuvable' });
-      doc.symbol = sym;
-      doc.name = typeof name === 'string' ? name.trim() : doc.name;
-      doc.type = t;
-      if (typeof decimals === 'number') doc.decimals = decimals;
-      if (typeof enabled === 'boolean') doc.enabled = enabled;
-      doc.updatedAt = new Date();
-      await doc.save();
-      return res.json({ success: true, message: 'Devise mise à jour', rate: doc });
+    let r = await Rate.findOne({ pair });
+    if (r) {
+      r.rate = rate;
+      r.desc = desc || r.desc;
+      await r.save();
+      return res.json({ success: true, message: 'Taux mis à jour', rate: r });
     } else {
-      // ensure unique symbol
-      const exists = await Rate.findOne({ symbol: sym });
-      if (exists) {
-        return res.status(400).json({ success: false, message: `La devise ${sym} existe déjà (id: ${exists._id}). Utilisez POST avec id pour mettre à jour.` });
-      }
-      const newDoc = new Rate({
-        symbol: sym,
-        name: typeof name === 'string' ? name.trim() : '',
-        type: t,
-        decimals: (typeof decimals === 'number') ? decimals : undefined,
-        enabled: typeof enabled === 'boolean' ? enabled : true
-      });
-      await newDoc.save();
-      return res.status(201).json({ success: true, message: 'Devise créée', rate: newDoc });
+      r = new Rate({ pair, rate, desc: desc || '' });
+      await r.save();
+      return res.json({ success: true, message: 'Taux ajouté', rate: r });
     }
   } catch (err) {
     console.error('POST /admin/rates err', err);
-    res.status(500).json({ success: false, message: 'Erreur currencies', error: String(err) });
+    res.status(500).json({ success: false, message: 'Erreur rates', error: String(err) });
   }
 });
 
-/**
- * DELETE /admin/rates/:id
- * - Supprime une devise
- */
+// DELETE rate
 router.delete('/admin/rates/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const r = await Rate.findById(id);
-    if (!r) return res.status(404).json({ success: false, message: 'Devise introuvable' });
+    if (!r) return res.status(404).json({ success: false, message: 'Taux introuvable' });
     await Rate.findByIdAndDelete(id);
-    return res.json({ success: true, message: 'Devise supprimée' });
+    res.json({ success: true, message: 'Suppression du taux réussie' });
   } catch (err) {
     console.error('DELETE /admin/rates/:id err', err);
-    res.status(500).json({ success: false, message: 'Erreur suppression devise', error: String(err) });
-  }
-});
-
-/**
- * PATCH /admin/rates/:id/enable
- * - toggle enabled flag or set it explicitly via body { enabled: true/false }
- */
-router.patch('/admin/rates/:id/enable', requireAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const { enabled } = req.body; // optional
-    const doc = await Rate.findById(id);
-    if (!doc) return res.status(404).json({ success: false, message: 'Devise introuvable' });
-    if (typeof enabled === 'boolean') doc.enabled = enabled;
-    else doc.enabled = !doc.enabled;
-    doc.updatedAt = new Date();
-    await doc.save();
-    return res.json({ success: true, message: 'Devise mise à jour', rate: doc });
-  } catch (err) {
-    console.error('PATCH /admin/rates/:id/enable err', err);
-    res.status(500).json({ success: false, message: 'Erreur mise à jour enabled', error: String(err) });
+    res.status(500).json({ success: false, message: 'Erreur suppression taux', error: String(err) });
   }
 });
 

@@ -1,798 +1,136 @@
-// public/js/admin.js
-(function(){
-  // helpers (définis en haut pour être disponibles dès le début)
-  const $ = sel => document.querySelector(sel);
-  const $$ = sel => Array.from(document.querySelectorAll(sel));
-  function toast(msg, ok=true){
-    const t = document.createElement('div');
-    t.style.position='fixed'; t.style.right='18px'; t.style.bottom='20px';
-    t.style.background = ok ? 'linear-gradient(90deg,#17a063,#15b36a)' : 'linear-gradient(90deg,#e14b4b,#d83a3a)';
-    t.style.color='#fff'; t.style.padding='10px 14px'; t.style.borderRadius='10px'; t.style.zIndex=99999;
-    t.innerText = msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3000);
-  }
-  function authFetch(url, opts = {}) {
-    opts.headers = opts.headers || {};
-    const token = localStorage.getItem('token');
-    if (token) opts.headers['Authorization'] = 'Bearer ' + token;
-    return fetch(url, opts);
+document.addEventListener("DOMContentLoaded", () => {
+  const token = localStorage.getItem("token");
+  if (!token) {
+    alert("Non autorisé");
+    window.location.href = "/login";
   }
 
-  // Global loader utilities
-  let globalLoaderEl = null;
-  let globalLoaderText = null;
-  function showLoader(text='Traitement en cours…'){
-    if(globalLoaderEl){
-      globalLoaderText && (globalLoaderText.innerText = text);
-      globalLoaderEl.classList.add('active');
-      globalLoaderEl.setAttribute('aria-hidden','false');
-      // prevent scroll and pointer events on body
-      document.body.style.pointerEvents = 'none';
-      document.documentElement.style.overflow = 'hidden';
-    }
-  }
-  function hideLoader(){
-    if(globalLoaderEl){
-      globalLoaderEl.classList.remove('active');
-      globalLoaderEl.setAttribute('aria-hidden','true');
-      document.body.style.pointerEvents = '';
-      document.documentElement.style.overflow = '';
-    }
-  }
+  const socket = io();
 
-  // Upload helper (tries multiple endpoints)
-  async function uploadFileToServer(file){
-    if(!file) return null;
-    // endpoints to try (order: most likely)
-    const candidates = ['/admin/upload','/api/upload-proof','/upload','/admin/upload-proof','/api/admin/upload'];
-    const fd = new FormData();
-    fd.append('file', file);
-    const token = localStorage.getItem('token');
-    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+  // ------------------ NEWS ------------------
+  const newsList = document.getElementById("newsList");
+  const addNewsBtn = document.getElementById("addNewsBtn");
 
-    for(const ep of candidates){
-      try {
-        const res = await fetch(ep, { method: 'POST', headers, body: fd });
-        const text = await res.text().catch(()=>null);
-        let json = null;
-        try { json = text ? JSON.parse(text) : null; } catch(e){ /* not json */ }
-        if(!res.ok || !json){
-          if(res.status === 404 || res.status === 405 || res.status === 501){
-            continue;
-          }
-        }
-        if(json && json.success){
-          return { url: json.url, public_id: json.public_id || null, mime: json.mime || json.mimeType || null };
-        } else if(res.ok && json){
-          return { url: json.url || json.file || null, public_id: json.public_id || null, mime: json.mime || null };
-        } else {
-          continue;
-        }
-      } catch(err){
-        console.warn('upload attempt failed for', ep, err && (err.message || err));
-        continue;
-      }
-    }
-    throw new Error('Aucun endpoint d\'upload disponible (checked multiple paths)');
-  }
-
-  // main initialization runs after DOM ready
-  document.addEventListener('DOMContentLoaded', function initAdmin(){
-    // assign loader elements now that DOM exists
-    globalLoaderEl = $('#global-loader');
-    globalLoaderText = $('#global-loader-text');
-
-    // token check
-    const token = localStorage.getItem('token');
-    if(!token){ alert('Accès admin requis. Connecte-toi.'); window.location.href='/login_admin'; return; }
-    const user = JSON.parse(localStorage.getItem('user') || 'null');
-    if(user && user.username){
-      const adminUserEl = $('#admin-username');
-      if(adminUserEl) adminUserEl.innerText = user.username;
-    }
-
-    // socket
-    try {
-      const socket = io();
-      socket.on('connect', ()=> console.log('socket connected', socket.id));
-      socket.on('newTransaction', ()=> { loadTransactions(); toast('Nouvelle transaction'); });
-      socket.on('txStatusChanged', ()=> { loadTransactions(); toast('Statut transaction changé'); });
-    } catch(e){ console.warn('socket init failed', e); }
-
-    // DOM refs (create after DOMContentLoaded)
-    const txTbody = $('#tx-tbody'), txCards = $('#tx-cards'), txFilter = $('#tx-filter'), btnRefreshTx = $('#btn-refresh-tx');
-    const publishBtn = $('#publish-news'), updateBtn = $('#update-news'), clearBtn = $('#clear-news'), publishStatus = $('#publish-status');
-    const nFile = $('#n-file'), nPreview = $('#n-preview'), nTitle = $('#n-title'), nDesc = $('#n-desc'), nContent = $('#n-content'), nId = $('#n-id');
-    const newsList = $('#news-list'), btnLoadNews = $('#btn-load-news'), btnSeed = $('#btn-seed-sample');
-    const ratesList = $('#rates-list'), rPair = $('#r-pair'), rValue = $('#r-value'), rAdd = $('#r-add'), btnRefresh = $('#btn-refresh');
-    const ratesFilter = $('#rates-filter'), ratesRefreshBtn = $('#rates-refresh');
-
-    // Payments DOM refs
-    const pmListEl = $('#payments-list'), pmSearch = $('#pm-search'), pmRefresh = $('#pm-refresh');
-    const pmId = $('#pm-id'), pmName = $('#pm-name'), pmType = $('#pm-type'), pmNetwork = $('#pm-network'), pmDetails = $('#pm-details'), pmActive = $('#pm-active');
-    const pmSave = $('#pm-save'), pmClear = $('#pm-clear');
-
-    // defensive checks for critical DOM elements
-    if(!txTbody || !txCards || !newsList || !ratesList){
-      console.error('Element(s) critiques manquant(s). Vérifie le HTML (ids attendus manquants).', { txTbody, txCards, newsList, ratesList });
-      toast('Erreur initialisation admin (éléments manquants). Voir console.', false);
-      return;
-    }
-
-    /* ---------------------------
-       Transactions (client-side pagination)
-       --------------------------- */
-    let transactionsCache = []; // full list returned by /admin/transactions
-    let txPage = 0;
-    const TX_PAGE_SIZE = 10;
-
-    async function loadTransactions(){
-      try {
-        showLoader('Chargement transactions…');
-        const res = await authFetch('/admin/transactions');
-        if(!res.ok) throw new Error('Impossible de charger transactions');
-        const txs = await res.json();
-        transactionsCache = Array.isArray(txs) ? txs : [];
-        txPage = 0;
-        renderTransactionsPage();
-      } catch(e){
-        console.error(e); if(txTbody) txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Erreur chargement</td></tr>'; if(txCards) txCards.innerHTML = '';
-      } finally { hideLoader(); }
-    }
-
-    function renderTransactionsPage(append=false){
-      const q = (txFilter && txFilter.value ? txFilter.value.trim().toLowerCase() : '');
-      const filtered = transactionsCache.filter(t => {
-        if(!q) return true;
-        const u = (t.user && (t.user.username||t.user.email)) || 'guest';
-        return String(u).toLowerCase().includes(q) || String(t.status||'').toLowerCase().includes(q) || ((t.from||'') + ' ' + (t.to||'')).toLowerCase().includes(q);
-      });
-
-      const end = (txPage + 1) * TX_PAGE_SIZE;
-      const pageItems = filtered.slice(0, end);
-
-      if(pageItems.length === 0){
-        txTbody.innerHTML = '<tr><td colspan="8" class="tiny">Aucune transaction</td></tr>';
-      } else {
-        txTbody.innerHTML = pageItems.map(t => {
-          const u = t.user ? (t.user.username || t.user.email) : 'Guest';
-          const id = t._id || t.id || '';
-          return `<tr data-txid="${escapeHtml(id)}">
-            <td>${new Date(t.createdAt).toLocaleString()}</td>
-            <td>${escapeHtml(u)}</td>
-            <td>${escapeHtml(t.type||'')}</td>
-            <td>${escapeHtml((t.from||'') + ' → ' + (t.to||''))}</td>
-            <td>${escapeHtml(String(t.amountFrom||''))}</td>
-            <td>${escapeHtml(String(t.amountTo||''))}</td>
-            <td>${renderStatusChip(t.status||'')}</td>
-            <td>
-              <div class="actions">
-                <button class="btn ghost" data-id="${id}" data-action="view">Voir</button>
-                <button class="btn" data-id="${id}" data-action="approve">Valider</button>
-                <button class="btn ghost" data-id="${id}" data-action="reject">Rejeter</button>
-              </div>
-            </td>
-          </tr>`; }).join('');
-      }
-
-      txCards.innerHTML = pageItems.map(t => {
-        const u = t.user ? (t.user.username || t.user.email) : 'Guest';
-        const id = t._id || t.id || '';
-        return `<div class="tx-card" data-txid="${escapeHtml(id)}">
-          <div class="row"><strong>${escapeHtml(u)}</strong><span class="tiny muted">${new Date(t.createdAt).toLocaleString()}</span></div>
-          <div class="row"><span>Pair: <strong>${escapeHtml((t.from||'') + '→' + (t.to||''))}</strong></span><span>Status: <strong>${escapeHtml(t.status||'')}</strong></span></div>
-          <div class="row"><span>Montant: ${escapeHtml(String(t.amountFrom||''))}</span><span>Reçu: ${escapeHtml(String(t.amountTo||''))}</span></div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn ghost" data-id="${id}" data-action="view">Voir</button>
-            <button class="btn" data-id="${id}" data-action="approve">Valider</button>
-            <button class="btn ghost" data-id="${id}" data-action="reject">Rejeter</button>
-          </div>
-        </div>`;
-      }).join('');
-
-      const filteredCount = filtered.length;
-      const loadMoreBtn = $('#tx-load-more');
-      if(loadMoreBtn){
-        if(end < filteredCount){
-          loadMoreBtn.style.display = 'inline-block';
-        } else {
-          loadMoreBtn.style.display = 'none';
-        }
-      }
-    }
-
-    document.addEventListener('click', (ev) => {
-      const btn = ev.target.closest('[data-action]');
-      if(!btn) return;
-      const id = btn.getAttribute('data-id');
-      const act = btn.getAttribute('data-action');
-      if(!id) return toast('ID transaction introuvable', false);
-      if(act === 'view') return viewTx(id);
-      if(act === 'approve') return setStatus(id, 'approved');
-      if(act === 'reject') return setStatus(id, 'rejected');
+  async function fetchNews() {
+    const res = await fetch("/admin/news", {
+      headers: { "Authorization": token }
     });
+    const data = await res.json();
+    renderNews(data);
+  }
 
-    function renderStatusChip(status){
-      const s = String(status || '').toLowerCase();
-      if(s === 'approved') return `<span class="status-chip status-approved">${escapeHtml(status)}</span>`;
-      if(s === 'rejected') return `<span class="status-chip status-rejected">${escapeHtml(status)}</span>`;
-      return `<span class="status-chip status-pending">${escapeHtml(status || 'pending')}</span>`;
-    }
-
-    const txLoadMoreBtn = $('#tx-load-more');
-    if(txLoadMoreBtn) txLoadMoreBtn.addEventListener('click', () => { txPage++; renderTransactionsPage(true); });
-    if(txFilter) txFilter.addEventListener('input', () => { txPage = 0; renderTransactionsPage(); });
-
-    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-    /* ---------------------------
-       Transaction modal (readable) + proof display
-       --------------------------- */
-    window.viewTx = async function(id){
-      try {
-        showLoader('Chargement transaction…');
-        const res = await authFetch('/admin/transactions/' + id);
-        if(!res.ok) {
-          const txt = await res.text().catch(()=>null);
-          throw new Error('Impossible de charger transaction: ' + (txt||res.status));
-        }
-        const tx = await res.json();
-        hideLoader();
-
-        const modal = document.createElement('div'); modal.className='modal';
-        const box = document.createElement('div'); box.className='box';
-        box.style.maxWidth='720px';
-
-        let userHtml = '<div class="tiny muted">Guest</div>';
-        if(tx.user){
-          const u = tx.user.username || tx.user.email || '';
-          userHtml = `<div><strong>${escapeHtml(u)}</strong><div class="tiny muted">${escapeHtml(tx.user.email||'')}</div></div>`;
-        }
-
-        const det = tx.details || {};
-        let detHtml = '';
-        if(Object.keys(det).length === 0){
-          detHtml = '<div class="small muted">Aucun détail fourni</div>';
-        } else {
-          detHtml = '<dl class="details">';
-          for(const k of Object.keys(det)){
-            const val = det[k] === null || typeof det[k] === 'undefined' ? '' : String(det[k]);
-            const safeVal = escapeHtml(val).replace(/\n/g,'<br>').replace(/&lt;br&gt;/g, '<br>');
-            detHtml += `<dt>${escapeHtml(k)}</dt><dd>${safeVal}</dd>`;
-          }
-          detHtml += '</dl>';
-        }
-
-        const txId = tx._id || tx.id || id;
-
-        let proofHtml = '';
-        const proofObj = tx.proof || tx.details && tx.details.proof;
-        if(proofObj && proofObj.url){
-          const proofUrl = escapeHtml(proofObj.url);
-          const mime = (proofObj.mime || proofObj.mimeType || '').toLowerCase();
-          if(mime.startsWith('image/') || /\.(jpeg|jpg|png|gif|webp)$/i.test(proofUrl)){
-            proofHtml = `
-              <div>
-                <h4>Preuve de paiement</h4>
-                <div class="proof-preview">
-                  <a href="${proofUrl}" target="_blank" rel="noopener">
-                    <img src="${proofUrl}" alt="Preuve de paiement" />
-                  </a>
-                  <div class="proof-meta">Type: ${escapeHtml(mime || 'image')} — <a href="${proofUrl}" target="_blank" rel="noopener">Ouvrir en grand</a></div>
-                </div>
-              </div>
-            `;
-          } else {
-            proofHtml = `
-              <div>
-                <h4>Preuve de paiement</h4>
-                <div class="proof-preview">
-                  <div><strong>Fichier :</strong> <a href="${proofUrl}" target="_blank" rel="noopener">Télécharger / Ouvrir la preuve</a></div>
-                  <div class="proof-meta">Type: ${escapeHtml(mime || 'fichier')}</div>
-                </div>
-              </div>
-            `;
-          }
-        }
-
-        box.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <h3>Détails transaction</h3>
-            <div style="display:flex;gap:8px;align-items:center">
-              <select id="modal-status-select" style="padding:6px;border-radius:8px;border:1px solid var(--border)">
-                <option value="pending">pending</option>
-                <option value="approved">approved</option>
-                <option value="rejected">rejected</option>
-                <option value="cancelled">cancelled</option>
-              </select>
-              <button class="btn" id="modal-save-status">Enregistrer</button>
-              <button class="btn ghost" id="close-x">Fermer</button>
-            </div>
-          </div>
-
-          <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
-            <div style="flex:1;min-width:220px">
-              <div class="kv"><div class="col">${userHtml}</div><div class="col tiny muted">${new Date(tx.createdAt).toLocaleString()}</div></div>
-              <div style="margin-top:8px"><strong>Pair:</strong> ${escapeHtml((tx.from||'') + ' → ' + (tx.to||''))}</div>
-              <div style="margin-top:6px"><strong>Type:</strong> ${escapeHtml(tx.type||'')}</div>
-              <div style="margin-top:6px"><strong>Montant:</strong> ${escapeHtml(String(tx.amountFrom||''))} → <strong>${escapeHtml(String(tx.amountTo||''))}</strong></div>
-              <div style="margin-top:8px">${renderStatusChip(tx.status)}</div>
-            </div>
-
-            <div style="flex:1;min-width:220px">
-              <div style="margin-top:4px"><strong>ID :</strong> ${escapeHtml(txId)}</div>
-              <div style="margin-top:8px;color:var(--muted);font-size:13px">${escapeHtml(tx.details && tx.details.note ? String(tx.details.note) : '')}</div>
-            </div>
-          </div>
-
-          <div class="details" style="margin-top:12px">
-            <h4>Détails fournis</h4>
-            ${detHtml}
-          </div>
-
-          ${proofHtml}
-        `;
-
-        modal.appendChild(box); document.body.appendChild(modal);
-        box.querySelector('#close-x').onclick = ()=> modal.remove();
-        modal.onclick = (e)=> { if(e.target === modal) modal.remove(); };
-
-        const sel = box.querySelector('#modal-status-select');
-        if(sel) sel.value = tx.status || 'pending';
-
-        box.querySelector('#modal-save-status').onclick = async () => {
-          const newStatus = sel.value;
-          if(!confirm('Confirmer la mise à jour du statut ?')) return;
-          if(!txId){ toast('ID transaction introuvable', false); return; }
-          try {
-            showLoader('Mise à jour du statut…');
-            const resp = await authFetch(`/admin/transactions/${txId}/status`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status: newStatus }) });
-            const body = await resp.json().catch(()=>null);
-            if(resp.ok && body && body.success){ toast('Statut mis à jour'); loadTransactions(); modal.remove(); }
-            else { console.error('status update failed', resp, body); toast('Erreur mise à jour', false); }
-          } catch(e){ console.error(e); toast('Erreur', false); }
-          finally { hideLoader(); }
-        };
-
-      } catch(e){ console.error('viewTx err', e); hideLoader(); toast('Erreur chargement détail', false); }
-    };
-
-    /* ---------------------------
-       setStatus shortcut (admin)
-       --------------------------- */
-    window.setStatus = async function(id, status){
-      if(!confirm('Confirmer la mise à jour du statut ?')) return;
-      if(!id){ toast('ID transaction introuvable', false); return; }
-      try {
-        showLoader('Mise à jour du statut…');
-        const res = await authFetch('/admin/transactions/' + id + '/status', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ status }) });
-        const body = await res.json().catch(()=>null);
-        if(res.ok && body && body.success){ toast('Statut mis à jour'); loadTransactions(); } else { console.error('setStatus failed', res, body); toast('Erreur', false); }
-      } catch(e){ console.error(e); toast('Erreur', false); }
-      finally { hideLoader(); }
-    };
-
-    /* ---------------------------
-       NEWS logic
-       --------------------------- */
-    if(nFile) {
-      nFile.addEventListener('change', () => {
-        const f = nFile.files[0];
-        if(!f){ if(nPreview){ nPreview.style.display='none'; nPreview.src=''; } return; }
-        if(nPreview){ nPreview.src = URL.createObjectURL(f); nPreview.style.display='block'; nPreview.onload = ()=> URL.revokeObjectURL(nPreview.src); }
-      });
-    }
-
-    function clearNewsForm(){
-      if(nId) nId.value=''; if(nTitle) nTitle.value=''; if(nDesc) nDesc.value=''; if(nContent) nContent.value='';
-      if(nFile) nFile.value=''; if(nPreview) nPreview.style.display='none';
-      if(publishBtn) publishBtn.style.display='inline-block';
-      if(updateBtn) updateBtn.style.display='none';
-    }
-    if(clearBtn) clearBtn.addEventListener('click', clearNewsForm);
-
-    function textToHtmlWithBr(text){
-      if(!text) return '';
-      return String(text).replace(/\r\n/g,'\n').replace(/\n/g, '<br>');
-    }
-    function htmlBrToText(html){
-      if(!html) return '';
-      return String(html).replace(/<br\s*\/?>/gi,'\n').replace(/&lt;br\s*\/?&gt;/gi,'\n');
-    }
-
-    function formatContentForDisplay(content){
-      if(!content) return '';
-      const s = String(content);
-      if(/<\s*(br|p|div|span|h|ul|ol|li|strong|em)[\s>]/i.test(s)){
-        return s;
-      }
-      return s.replace(/\r\n/g,'\n').replace(/\n/g,'<br>');
-    }
-
-    if(publishBtn) {
-      publishBtn.addEventListener('click', async () => {
-        const title = nTitle ? nTitle.value.trim() : '';
-        if(!title){ alert('Titre requis'); return; }
-        publishBtn.disabled = true; if(publishStatus) publishStatus.innerText = 'Publication...';
-        showLoader('Publication en cours…');
-        try {
-          let imageUrl = '', publicId = '';
-          if(nFile && nFile.files && nFile.files[0] && nFile.files[0].size > 0){
-            try {
-              const up = await uploadFileToServer(nFile.files[0]);
-              if(up && up.url){ imageUrl = up.url; publicId = up.public_id || ''; }
-            } catch(uerr){
-              console.warn('upload failed, continue publishing without image', uerr && (uerr.message||uerr));
-              toast('Upload image échoué — publication sans image', false);
-            }
-          }
-
-          const body = {
-            title,
-            description: nDesc ? textToHtmlWithBr(nDesc.value.trim()) : '',
-            content: nContent ? textToHtmlWithBr(nContent.value.trim()) : '',
-            image: imageUrl,
-            image_public_id: publicId
-          };
-          const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-          const j = await res.json().catch(()=>null);
-          if(res.ok && j && j.success){ toast('Publication réussie'); clearNewsForm(); loadNews(); } else { console.error('publish failed', res, j); toast('Erreur publication', false); alert((j && j.message) || 'Erreur'); }
-        } catch(err){ console.error(err); toast('Erreur upload/publication', false); alert(String(err)); }
-        finally{ if(publishBtn){ publishBtn.disabled=false; } if(publishStatus) publishStatus.innerText=''; hideLoader(); }
-      });
-    }
-
-    // update - scroll to top of editor when editing
-    window.editNews = function(id){
-      const found = window.__newsCache && window.__newsCache.find(n => (n._id === id || n.id === id));
-      if(!found) return alert('News introuvable');
-      if(nId) nId.value = found._id || found.id || '';
-      if(nTitle) nTitle.value = found.title || '';
-      if(nDesc) nDesc.value = htmlBrToText(found.description || '');
-      if(nContent) nContent.value = htmlBrToText(found.content || '');
-      if(found.image && nPreview){ nPreview.src = found.image; nPreview.style.display = 'block'; }
-      if(publishBtn) publishBtn.style.display='none';
-      if(updateBtn) updateBtn.style.display='inline-block';
-      // scroll to top of news editor (anchor)
-      const editorEl = document.getElementById('news-section');
-      if(editorEl && typeof editorEl.scrollIntoView === 'function'){
-        editorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    };
-
-    if(updateBtn) {
-      updateBtn.addEventListener('click', async () => {
-        const id = nId ? nId.value : '';
-        if(!id) return alert('Aucune news sélectionnée');
-        updateBtn.disabled = true; if(publishStatus) publishStatus.innerText = 'Mise à jour...';
-        showLoader('Mise à jour en cours…');
-        try {
-          let imageUrl = '', publicId = '';
-          if(nFile && nFile.files && nFile.files[0] && nFile.files[0].size > 0){
-            try {
-              const up = await uploadFileToServer(nFile.files[0]);
-              if(up && up.url){ imageUrl = up.url; publicId = up.public_id || ''; }
-            } catch(uerr){
-              console.warn('upload failed for update, continue without image', uerr && (uerr.message||uerr));
-              toast('Upload image échoué — mise à jour sans changer l\'image', false);
-            }
-          }
-          const body = {
-            id,
-            title: nTitle ? nTitle.value.trim() : '',
-            description: nDesc ? textToHtmlWithBr(nDesc.value.trim()) : '',
-            content: nContent ? textToHtmlWithBr(nContent.value.trim()) : '',
-            image: imageUrl,
-            image_public_id: publicId
-          };
-          const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-          const j = await res.json().catch(()=>null);
-          if(res.ok && j && j.success){ toast('Modification réussie'); clearNewsForm(); loadNews(); } else { console.error('update failed', res, j); toast('Erreur', false); alert((j && j.message) || 'Erreur'); }
-        } catch(e){ console.error(e); toast('Erreur update', false); }
-        finally{ updateBtn.disabled=false; if(publishStatus) publishStatus.innerText=''; hideLoader(); }
-      });
-    }
-
-    // Render news list with collapse + toggle
-    function renderNewsList(news){
-      if(!news || news.length === 0){ newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
-      window.__newsCache = news;
-      newsList.innerHTML = news.map(n => {
-        const nid = (n._id || n.id || '');
-        const when = new Date(n.date || n.createdAt || Date.now()).toLocaleString();
-        const contentRaw = n.content || '';
-        const descriptionRaw = n.description || '';
-        const contentHtml = formatContentForDisplay(contentRaw);
-        const descHtml = formatContentForDisplay(descriptionRaw);
-        return `
-          <div class="news-item" data-id="${escapeHtml(nid)}">
-            ${n.image ? `<img class="news-thumb" src="${escapeHtml(n.image)}" alt="">` : `<div class="news-thumb"></div>`}
-            <div class="news-body">
-              <div class="news-meta" style="align-items:flex-start">
-                <div style="min-width:0">
-                  <span class="news-title">${escapeHtml(n.title)}</span>
-                  <div class="tiny muted" style="margin-top:4px">${descHtml}</div>
-                </div>
-                <div class="tiny muted" style="margin-left:12px">${when}</div>
-              </div>
-              <div class="news-content collapsed" data-news-id="${escapeHtml(nid)}">${contentHtml}</div>
-              <div style="display:flex;gap:8px;align-items:center;justify-content:flex-start;margin-top:6px">
-                <button class="news-toggle" data-news-id="${escapeHtml(nid)}" aria-expanded="false">Afficher +</button>
-                <div style="margin-left:auto;display:flex;gap:6px">
-                  <button class="btn" data-news-id="${escapeHtml(nid)}" data-news-action="edit">Modifier</button>
-                  <button class="btn ghost" data-news-id="${escapeHtml(nid)}" data-news-action="delete">Supprimer</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // delegate news edit/delete clicks & toggle
-    if(newsList){
-      newsList.addEventListener('click', (ev) => {
-        const toggleBtn = ev.target.closest('.news-toggle');
-        if(toggleBtn){
-          const nid = toggleBtn.getAttribute('data-news-id');
-          const contentEl = document.querySelector(`.news-content[data-news-id="${CSS.escape(nid)}"]`);
-          if(!contentEl) return;
-          const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-          if(expanded){
-            contentEl.style.maxHeight = `calc(var(--news-collapse-lines) * 1.4em)`;
-            toggleBtn.innerText = 'Afficher +';
-            toggleBtn.setAttribute('aria-expanded', 'false');
-          } else {
-            contentEl.style.maxHeight = 'none';
-            toggleBtn.innerText = 'Réduire';
-            toggleBtn.setAttribute('aria-expanded', 'true');
-          }
-          return;
-        }
-
-        const editBtn = ev.target.closest('[data-news-action]');
-        if(!editBtn) return;
-        const action = editBtn.getAttribute('data-news-action');
-        const id = editBtn.getAttribute('data-news-id');
-        if(!id) { toast('ID news introuvable', false); return; }
-        if(action === 'edit') return editNews(id);
-        if(action === 'delete') {
-          if(!confirm('Supprimer cette news ?')) return;
-          deleteNews(id);
-        }
-      });
-    }
-
-    async function deleteNews(id){
-      if(!id){ toast('ID news invalide', false); return; }
-      if(!confirm('Supprimer cette news ?')) return;
-      try {
-        showLoader('Suppression en cours…');
-        const res = await authFetch('/admin/news/' + id, { method:'DELETE' });
-        const j = await res.json().catch(()=>null);
-        if(res.ok && j && j.success){ toast('Suppression réussie'); loadNews(); } else { console.error('deleteNews failed', res, j); toast('Erreur suppression', false); alert((j && j.message) || 'Erreur'); }
-      } catch(e){ console.error('deleteNews err', e); toast('Erreur suppression', false); }
-      finally{ hideLoader(); }
-    }
-
-    async function loadNews(){
-      try {
-        showLoader('Chargement news…');
-        const res = await authFetch('/admin/news');
-        if(!res.ok) throw new Error('Impossible de charger news');
-        const news = await res.json();
-        renderNewsList(news);
-      } catch(e){ console.error(e); if(newsList) newsList.innerHTML = '<div class="tiny muted">Erreur chargement news</div>'; }
-      finally { hideLoader(); }
-    }
-
-    /* ---------------------------
-       RATE logic + search
-       --------------------------- */
-    let ratesCache = [];
-    async function loadRates(){
-      try {
-        const res = await fetch('/api/rates');
-        const rates = await res.json();
-        ratesCache = Array.isArray(rates) ? rates : [];
-        renderRatesList(ratesCache);
-      } catch (e){ console.error(e); if(ratesList) ratesList.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; }
-    }
-
-    function renderRatesList(list){
-      const q = ratesFilter ? ratesFilter.value.trim().toLowerCase() : '';
-      const filtered = Array.isArray(list) ? list.filter(r => !q || (r.pair && r.pair.toLowerCase().includes(q)) || String(r.rate).toLowerCase().includes(q)) : [];
-      if(!filtered || filtered.length === 0){ if(ratesList) ratesList.innerHTML = '<div class="tiny muted">Aucun taux</div>'; return; }
-      ratesList.innerHTML = filtered.map(r => `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${escapeHtml(r.pair)}</strong><div class="tiny muted">${escapeHtml(r.desc||'')}</div></div><div><strong>${escapeHtml(String(r.rate))}</strong></div></div>`).join('');
-    }
-
-    if(ratesFilter) ratesFilter.addEventListener('input', ()=> renderRatesList(ratesCache));
-    if(ratesRefreshBtn) ratesRefreshBtn.addEventListener('click', ()=> loadRates());
-
-    // guard rAdd action (this was causing the "Cannot read properties of null" if element missing)
-    if(rAdd){
-      rAdd.addEventListener('click', async () => {
-        if(!rPair || !rValue){
-          console.error('Les éléments r-pair ou r-value sont manquants dans le DOM.');
-          toast('Impossible d\'ajouter le taux: éléments manquants', false);
-          return;
-        }
-        const pair = rPair.value.trim(); const rate = parseFloat(rValue.value);
-        if(!pair || isNaN(rate)) return alert('Pair et valeur requis');
-        try {
-          showLoader('Enregistrement taux…');
-          const res = await authFetch('/admin/rates', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ pair, rate }) });
-          const j = await res.json().catch(()=>null);
-          if(res.ok && j && j.success){ toast('Taux ajouté/modifié'); rPair.value=''; rValue.value=''; loadRates(); } else { console.error('rates add failed', res, j); toast('Erreur rates', false); }
-        } catch(e){ console.error(e); toast('Erreur', false); }
-        finally{ hideLoader(); }
-      });
-    } else {
-      console.warn('Bouton #r-add introuvable. L\'ajout/édition des taux est désactivé.');
-    }
-
-    /* ---------------------------
-       PAYMENTS management (admin)
-       --------------------------- */
-    let paymentsCache = [];
-
-    async function loadPayments(){
-      try {
-        const res = await authFetch('/admin/payment-methods');
-        if(!res.ok) throw new Error('Impossible de charger paiements');
-        const body = await res.json();
-        if(!body || !body.success) { if(pmListEl) pmListEl.innerHTML = '<div class="tiny muted">Aucune méthode</div>'; paymentsCache = []; return; }
-        paymentsCache = Array.isArray(body.methods) ? body.methods : [];
-        renderPayments();
-      } catch (e) {
-        console.error(e); if(pmListEl) pmListEl.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; paymentsCache = [];
-      }
-    }
-
-    function renderPayments(){
-      if(!pmListEl) return;
-      const q = pmSearch ? pmSearch.value.trim().toLowerCase() : '';
-      const filtered = paymentsCache.filter(p => {
-        if(!q) return true;
-        return (p.name||'').toLowerCase().includes(q) || (p.network||'').toLowerCase().includes(q);
-      });
-      if(!filtered || filtered.length === 0){ pmListEl.innerHTML = '<div class="tiny muted">Aucune méthode</div>'; return; }
-
-      pmListEl.innerHTML = filtered.map(p => {
-        const id = p._id || p.id || '';
-        const n = p.network ? ` (${escapeHtml(p.network)})` : '';
-        const details = p.details ? `<div class="meta">${escapeHtml(p.details)}</div>` : '';
-        return `<div class="payment-item" data-pmid="${escapeHtml(id)}">
-          <div style="min-width:0">
-            <div style="display:flex;align-items:center;gap:8px"><strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</strong>${n}${p.active ? '<span class="tiny" style="margin-left:8px;color:green">● actif</span>' : '<span class="tiny" style="margin-left:8px;color:#999">● inactif</span>'}</div>
-            ${details}
-          </div>
-          <div class="actions">
-            <button class="btn" data-pm-id="${escapeHtml(id)}" data-pm-action="edit">Modifier</button>
-            <button class="btn ghost" data-pm-id="${escapeHtml(id)}" data-pm-action="delete">Supprimer</button>
-          </div>
-        </div>`;
-      }).join('');
-    }
-
-    if(pmListEl){
-      pmListEl.addEventListener('click', (ev) => {
-        const btn = ev.target.closest('[data-pm-action]');
-        if(!btn) return;
-        const action = btn.getAttribute('data-pm-action');
-        const id = btn.getAttribute('data-pm-id');
-        if(!id){ toast('ID méthode introuvable', false); return; }
-        if(action === 'edit') return fillPaymentForm(id);
-        if(action === 'delete') return deletePaymentMethod(id);
-      });
-    }
-
-    function fillPaymentForm(id){
-      const found = paymentsCache.find(p => String(p._id) === String(id) || String(p.id) === String(id));
-      if(!found) return toast('Méthode introuvable', false);
-      if(pmId) pmId.value = found._id || found.id || '';
-      if(pmName) pmName.value = found.name || '';
-      if(pmType) pmType.value = found.type || 'fiat';
-      if(pmNetwork) pmNetwork.value = found.network || '';
-      if(pmDetails) pmDetails.value = found.details || '';
-      if(pmActive) pmActive.checked = !!found.active;
-      if(pmName) pmName.focus();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    function clearPaymentForm(){
-      if(pmId) pmId.value = ''; if(pmName) pmName.value=''; if(pmType) pmType.value='fiat'; if(pmNetwork) pmNetwork.value=''; if(pmDetails) pmDetails.value=''; if(pmActive) pmActive.checked=true;
-    }
-
-    if(pmClear) pmClear.addEventListener('click', (e) => { e.preventDefault(); clearPaymentForm(); });
-
-    if(pmSave){
-      pmSave.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const id = pmId ? pmId.value || null : null;
-        const name = pmName ? pmName.value.trim() : '';
-        const type = pmType ? pmType.value : 'fiat';
-        const network = pmNetwork ? pmNetwork.value.trim() : '';
-        const details = pmDetails ? pmDetails.value.trim() : '';
-        const active = pmActive ? !!pmActive.checked : true;
-        if(!name) return alert('Nom requis');
-        try {
-          showLoader('Enregistrement méthode…');
-          const payload = { id, name, type, network, details, active };
-          const res = await authFetch('/admin/payment-methods', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-          const j = await res.json().catch(()=>null);
-          if(res.ok && j && j.success){
-            toast('Méthode enregistrée');
-            clearPaymentForm();
-            loadPayments();
-          } else {
-            console.error('pm save failed', res, j);
-            toast('Erreur sauvegarde', false);
-          }
-        } catch (err) {
-          console.error(err);
-          toast('Erreur serveur', false);
-        } finally { hideLoader(); }
-      });
-    }
-
-    async function deletePaymentMethod(id){
-      if(!id) { toast('ID méthode introuvable', false); return; }
-      if(!confirm('Supprimer cette méthode de paiement ?')) return;
-      try {
-        showLoader('Suppression méthode…');
-        const res = await authFetch('/admin/payment-methods/' + id, { method:'DELETE' });
-        const j = await res.json().catch(()=>null);
-        if(res.ok && j && j.success){
-          toast('Méthode supprimée');
-          loadPayments();
-        } else { console.error('pm delete failed', res, j); toast('Erreur suppression', false); }
-      } catch(e){ console.error(e); toast('Erreur', false); }
-      finally{ hideLoader(); }
-    }
-
-    if(pmRefresh) pmRefresh.addEventListener('click', () => { loadPayments(); });
-    if(pmSearch) pmSearch.addEventListener('input', () => renderPayments());
-
-    /* ---------------------------
-       helpers / bindings
-       --------------------------- */
-    const logoutBtn = $('#btn-logout');
-    if(logoutBtn) logoutBtn.addEventListener('click', ()=> { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href='/login_admin'; });
-    const btnLoadNewsEl = $('#btn-load-news');
-    if(btnLoadNewsEl) btnLoadNewsEl.addEventListener('click', loadNews);
-    const btnSeedEl = $('#btn-seed-sample');
-    if(btnSeedEl) btnSeedEl.addEventListener('click', async () => {
-      if(!confirm('Créer une news test ?')) return;
-      try {
-        showLoader('Création sample…');
-        const body = { title: 'News test ' + new Date().toLocaleTimeString(), description:'sample', content:'contenu sample' };
-        const res = await authFetch('/admin/news', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-        const j = await res.json().catch(()=>null);
-        if(res.ok && j && j.success){ toast('Seed OK'); loadNews(); } else { toast('Erreur seed', false); console.error('seed failed', res, j); }
-      } catch(e){ console.error(e); toast('Erreur', false); }
-      finally{ hideLoader(); }
+  function renderNews(news) {
+    newsList.innerHTML = "";
+    news.forEach(n => {
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <h3>${n.title}</h3>
+        <p>${n.content}</p>
+        <button onclick="editNews('${n._id}')">Modifier</button>
+        <button onclick="deleteNews('${n._id}')">Supprimer</button>
+      `;
+      newsList.appendChild(div);
     });
+  }
 
-    const btnRefreshAll = $('#btn-refresh');
-    if(btnRefreshAll) btnRefreshAll.addEventListener('click', ()=> { loadNews(); loadRates(); loadPayments(); });
-    if($('#btn-refresh-tx')) $('#btn-refresh-tx').addEventListener('click', ()=> { loadTransactions(); });
+  addNewsBtn.addEventListener("click", () => {
+    const title = prompt("Titre de la news :");
+    const content = prompt("Contenu :");
+    if (title && content) {
+      fetch("/admin/news", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": token
+        },
+        body: JSON.stringify({ title, content })
+      }).then(fetchNews);
+    }
+  });
 
-    document.querySelectorAll('.admin-top-nav .nav-btn').forEach(b => {
-      b.addEventListener('click', (e) => {
-        document.querySelectorAll('.admin-top-nav .nav-btn').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-        const t = b.getAttribute('data-target');
-        const el = document.getElementById(t);
-        if(el) el.scrollIntoView({behavior:'smooth', block:'start'});
+  window.editNews = async function(id) {
+    const title = prompt("Nouveau titre :");
+    const content = prompt("Nouveau contenu :");
+    if (title && content) {
+      await fetch(`/admin/news/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": token
+        },
+        body: JSON.stringify({ title, content })
       });
+      fetchNews();
+    }
+  }
+
+  window.deleteNews = async function(id) {
+    if (confirm("Supprimer cette news ?")) {
+      await fetch(`/admin/news/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": token }
+      });
+      fetchNews();
+    }
+  }
+
+  fetchNews();
+
+  // ------------------ TRANSACTIONS ------------------
+  const transactionsList = document.getElementById("transactionsList");
+
+  async function fetchTransactions() {
+    const res = await fetch("/admin/transactions", {
+      headers: { "Authorization": token }
     });
+    const data = await res.json();
+    renderTransactions(data);
+  }
 
-    // initial load
-    loadTransactions(); loadNews(); loadRates(); loadPayments();
+  function renderTransactions(tx) {
+    transactionsList.innerHTML = "";
+    tx.forEach(t => {
+      const div = document.createElement("div");
+      div.innerHTML = `
+        <p>${t.user} → ${t.amount} ${t.currency} : ${t.status}</p>
+        <button onclick="setStatus('${t._id}', 'approved')">Approuver</button>
+        <button onclick="setStatus('${t._id}', 'rejected')">Rejeter</button>
+      `;
+      transactionsList.appendChild(div);
+    });
+  }
 
-    // expose if needed
-    window.editNews = editNews; window.deleteNews = deleteNews; window.viewTx = viewTx; window.setStatus = setStatus;
-  }); // end DOMContentLoaded
-})();
+  window.setStatus = async function(id, status) {
+    await fetch(`/admin/transactions/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": token
+      },
+      body: JSON.stringify({ status })
+    });
+    fetchTransactions();
+  }
+
+  fetchTransactions();
+
+  socket.on("newTransaction", fetchTransactions);
+  socket.on("txStatusChanged", fetchTransactions);
+
+  // ------------------ RATES ------------------
+  const ratesForm = document.getElementById("ratesForm");
+  ratesForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const buyRate = ratesForm.buyRate.value;
+    const sellRate = ratesForm.sellRate.value;
+    await fetch("/admin/rates", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": token
+      },
+      body: JSON.stringify({ buyRate, sellRate })
+    });
+    alert("Rates mis à jour !");
+  });
+});

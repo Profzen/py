@@ -79,12 +79,6 @@
     .proof-preview{margin-top:8px;margin-bottom:8px}
     .proof-preview img{max-width:160px;max-height:120px;border-radius:6px;border:1px solid #ddd}
 
-    /* Live preview block on page */
-    .live-preview { margin-top:12px; padding:12px; border-radius:8px; background:#fbfdff; border:1px solid #e6f2ff; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-    .live-preview .col { flex:1; min-width:180px; }
-    .live-preview .k { color:var(--muted); font-size:13px; }
-    .live-preview .v { font-weight:700; }
-
     /* Responsive tweaks */
     @media (max-width:940px){
       .intro-hero{padding:18px}
@@ -97,7 +91,6 @@
       .howto-step{min-width:unset}
       .btn{padding:9px 12px}
       .modal .box{padding:12px}
-      .live-preview{flex-direction:column;align-items:flex-start}
     }
 
     /* Small helpers (prevent link underline everywhere for "buttonish" anchor links) */
@@ -152,30 +145,6 @@
             <input type="text" id="amountTo" readonly aria-readonly="true">
           </div>
 
-          <!-- Live preview (page-level) - updated by JS if desired; modal also contains its own preview -->
-          <div class="live-preview" aria-live="polite" aria-atomic="true" id="live-exchange-preview" role="region" aria-label="Aperçu de l'échange en temps réel">
-            <div class="col">
-              <div class="k">Paire</div>
-              <div class="v" id="preview-pair">-</div>
-            </div>
-            <div class="col">
-              <div class="k">Cours marché</div>
-              <div class="v" id="preview-market">-</div>
-            </div>
-            <div class="col">
-              <div class="k">Prix appliqué</div>
-              <div class="v" id="preview-applied">-</div>
-            </div>
-            <div class="col">
-              <div class="k">Vous recevrez (est.)</div>
-              <div class="v" id="preview-received">-</div>
-            </div>
-            <div style="min-width:150px;text-align:right">
-              <div class="k">Dernière MAJ</div>
-              <div class="v small" id="preview-last-updated">-</div>
-            </div>
-          </div>
-
           <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;align-items:center">
             <button class="btn" id="do-exchange" type="button">Soumettre</button>
             <button type="button" class="btn ghost" id="refresh-rates">Rafraîchir taux</button>
@@ -191,7 +160,7 @@
       <div class="howto-grid" role="list">
         <div class="howto-step" role="listitem" aria-label="Étape 1 - Choisir la paire">
           <h4>1. Choisir la paire</h4>
-          <p class="small">Sélectionnez la devise que vous souhaitez envoyer et celle que vous voulez recevoir. Les taux affichés sont mis à jour depuis <strong>CoinGecko</strong> toutes les 15 secondes.</p>
+          <p class="small">Sélectionnez la devise que vous souhaitez envoyer et celle que vous voulez recevoir. Les taux affichés sont mis à jour à partir de notre base.</p>
         </div>
 
         <div class="howto-step" role="listitem" aria-label="Étape 2 - Entrer le montant">
@@ -242,7 +211,633 @@
   </footer>
 
   <!-- Existing exchange JS logic adapted, preserved and extended -->
-  <script src="/js/exchange.js"></script>
+  <script>
+  (function(){
+    // DOM refs
+    const $ = s => document.querySelector(s);
+    const fromEl = $('#from'), toEl = $('#to'), amtEl = $('#amountFrom'), outEl = $('#amountTo');
+    const doBtn = $('#do-exchange'), refreshRatesBtn = $('#refresh-rates'), ratesSourceEl = $('#rates-source');
+
+    // Default addresses (placeholders)
+    const networkAddresses = {
+      BEP20: '0xBEP20_DEFAULT_ADDR_ABC123',
+      TRC20: 'TTRC20_DEFAULT_ADDR_ABC123',
+      ERC20: '0xERC20_DEFAULT_ADDR_ABC123',
+      BTC: '1BTC_DEFAULT_ADDR_abc123',
+      LTC: 'LTC_DEFAULT_ADDR_abc123'
+    };
+
+    // default payments fallback (used when /api/payments fails)
+    const defaultPayments = [
+      { _id: 'pm_mix_by_yas', name: 'Mix by Yas', type: 'fiat', network: '', addressOrAccount: '99XXXXXX', details: '99XXXXXX', active: true },
+      { _id: 'pm_moov', name: 'Moov Money', type: 'fiat', network: '', addressOrAccount: '99YYYYYY', details: '99YYYYYY', active: true },
+      { _id: 'pm_ecobank', name: 'Ecobank', type: 'fiat', network: '', addressOrAccount: 'Compte: 1234567890', details: 'Compte: 1234567890', active: true },
+      { _id: 'pm_bep20', name: 'BEP20 (receiving)', type: 'crypto', network: 'BEP20', addressOrAccount: networkAddresses.BEP20, details: networkAddresses.BEP20, active: true },
+      { _id: 'pm_erc20', name: 'ERC20 (receiving)', type: 'crypto', network: 'ERC20', addressOrAccount: networkAddresses.ERC20, details: networkAddresses.ERC20, active: true }
+    ];
+
+    let paymentsCache = [];
+
+    async function loadPayments(){
+      try{
+        const res = await fetch('/api/payments');
+        if(!res.ok) throw new Error('no payments endpoint');
+        const data = await res.json();
+        if(!Array.isArray(data) || data.length === 0) throw new Error('no payments data');
+        // normalize: accept various field names
+        paymentsCache = data.map(p => ({
+          _id: p._id || p.id || (p.name + '_' + (p.network||'')),
+          name: p.name || p.title || ('Moyen ' + (p.network || '')),
+          type: (p.type || p.kind || 'fiat'),
+          network: p.network || p.chain || '',
+          addressOrAccount: p.addressOrAccount || p.address || p.details || p.account || '',
+          details: p.addressOrAccount || p.address || p.details || p.account || '',
+          active: typeof p.active === 'undefined' ? true : !!p.active
+        }));
+        return;
+      }catch(err){
+        // fallback to defaults
+        console.warn('loadPayments fallback to defaults', err && err.message ? err.message : err);
+        paymentsCache = defaultPayments.map(p => ({
+          _id: p._id, name: p.name, type: p.type, network: p.network || '', addressOrAccount: p.addressOrAccount || p.details || '', details: p.details || p.addressOrAccount || '', active: !!p.active
+        }));
+      }
+    }
+
+    // Load rates -> populate selects
+    async function loadRatesOptions(){
+      try{
+        const r = await fetch('/api/rates');
+        const rates = await r.json();
+        if(Array.isArray(rates)) ratesSourceEl.innerText = '(taux: serveur)';
+        else ratesSourceEl.innerText = '';
+        const set = new Set();
+        if(Array.isArray(rates)){
+          rates.forEach(rt => {
+            const p = (rt.pair || '').toString();
+            const parts = p.split('-');
+            if(parts.length === 2){ set.add(parts[0]); set.add(parts[1]); }
+          });
+        }
+        ['USD','EUR','BTC','ETH','USDT','USDC','SOL'].forEach(x => set.add(x));
+        const arr = Array.from(set).sort();
+        fromEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        toEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+      }catch(e){
+        console.error('loadRatesOptions err', e);
+        const arr = ['USD','BTC','ETH','USDT'];
+        fromEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        toEl.innerHTML = arr.map(v => `<option value="${v}">${v}</option>`).join('');
+        ratesSourceEl.innerText = '(taux: défaut)';
+      }
+    }
+
+    // Robust find rate: uses api/rates
+    async function findRate(from,to){
+      try{
+        const res = await fetch('/api/rates');
+        const rates = await res.json();
+        if(Array.isArray(rates)){
+          const pair = rates.find(r => (r.pair||'') === `${from}-${to}`);
+          if(pair) return Number(pair.rate);
+          const inv = rates.find(r => (r.pair||'') === `${to}-${from}`);
+          if(inv) return 1 / Number(inv.rate);
+        }
+      }catch(e){ console.warn('findRate err', e); }
+      return 1;
+    }
+
+    // Calculation
+    async function calculate(){
+      const f = (fromEl.value||'').toUpperCase();
+      const t = (toEl.value||'').toUpperCase();
+      const amt = Number(amtEl.value || 0);
+      if(!amt || !f || !t){ outEl.value = ''; return; }
+      const rate = await findRate(f,t);
+      // show with sensible precision
+      const v = (amt * rate);
+      outEl.value = Number.isFinite(v) ? v.toFixed(6) : '';
+    }
+
+    fromEl.addEventListener('change', () => { calculate(); });
+    toEl.addEventListener('change', () => { calculate(); });
+    amtEl.addEventListener('input', () => { calculate(); });
+
+    refreshRatesBtn.addEventListener('click', async () => {
+      await loadRatesOptions();
+      alert('Taux rafraîchis');
+    });
+
+    // Type determination
+    function determineType(from,to){
+      const fiat = ['USD','EUR','XOF','FCFA','GHS'];
+      const isFromFiat = fiat.includes((from||'').toUpperCase());
+      const isToFiat = fiat.includes((to||'').toUpperCase());
+      if(!isFromFiat && !isToFiat) return 'crypto-crypto';
+      if(!isFromFiat && isToFiat) return 'crypto-fiat';
+      if(isFromFiat && !isToFiat) return 'fiat-crypto';
+      return 'fiat-fiat';
+    }
+
+    // Build payment method select with data-details to ensure immediate access
+    function buildPaymentMethodSelect(nameAttr, filterType='fiat'){
+      const sel = document.createElement('select');
+      sel.name = nameAttr;
+      sel.required = true;
+      sel.style.padding = '8px';
+      sel.style.borderRadius = '8px';
+      sel.style.border = '1px solid var(--border)';
+      sel.innerHTML = `<option value="">-- choisir moyen --</option>`;
+      const filtered = paymentsCache.filter(p => (p.type||'').toLowerCase() === (filterType||'').toLowerCase() && p.active);
+      if(filtered.length === 0){
+        // fallback to defaults of that type
+        defaultPayments.filter(p => p.type === filterType).forEach(p => {
+          const details = (p.details || p.addressOrAccount || '');
+          sel.innerHTML += `<option value="${encodeURIComponent(p._id)}" data-details="${encodeURIComponent(details)}">${p.name}${p.network ? ' ('+p.network+')' : ''}</option>`;
+        });
+      } else {
+        filtered.forEach(p => {
+          const details = (p.details || p.addressOrAccount || '');
+          // include some normalized dataset attributes to make lookup easy later
+          sel.innerHTML += `<option value="${encodeURIComponent(p._id)}" data-details="${encodeURIComponent(details)}" data-network="${encodeURIComponent(p.network||'')}" data-name="${encodeURIComponent(p.name||'')}">${p.name}${p.network ? ' ('+p.network+')' : ''}</option>`;
+        });
+      }
+      return sel;
+    }
+
+    function buildNetworkSelect(nameAttr){
+      const networks = ['BEP20','TRC20','ERC20','BTC','LTC'];
+      const sel = document.createElement('select');
+      sel.name = nameAttr;
+      sel.required = true;
+      sel.style.padding = '8px';
+      sel.style.borderRadius = '8px';
+      sel.style.border = '1px solid var(--border)';
+      sel.innerHTML = `<option value="">-- choisir réseau --</option>` + networks.map(n => `<option value="${n}">${n}</option>`).join('');
+      return sel;
+    }
+
+    // Helper: compute and format amount summary block
+    async function buildAmountSummaryBlock(base) {
+      // base: { from, to, amountFrom }
+      const rate = await findRate(base.from, base.to);
+      const amountFrom = Number(base.amountFrom || 0);
+      const estimatedTo = amountFrom * rate;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'amount-summary';
+      wrapper.innerHTML = `
+        <div><strong>Montant envoyé :</strong> ${escapeHtml(String(amountFrom))} ${escapeHtml(base.from)}</div>
+        <div style="margin-top:6px"><strong>Approx. reçu :</strong> ${Number.isFinite(estimatedTo) ? estimatedTo.toFixed(6) : '-'} ${escapeHtml(base.to)}</div>
+      `;
+      return wrapper;
+    }
+
+    // PROOF upload helper: create UI node and wire upload flow to /api/upload-proof
+    function createProofUploaderContainer() {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'proof-uploader';
+
+      // file input
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      fileInput.name = 'proof';
+      fileInput.setAttribute('aria-label', 'Preuve de paiement (image/pdf/doc)');
+
+      // upload button
+      const uploadBtn = document.createElement('button');
+      uploadBtn.type = 'button';
+      uploadBtn.className = 'btn ghost';
+      uploadBtn.innerText = 'Uploader preuve';
+
+      // status / preview
+      const status = document.createElement('div');
+      status.className = 'proof-status small muted';
+      status.style.marginLeft = '8px';
+
+      // preview area
+      const preview = document.createElement('div');
+      preview.className = 'proof-preview';
+
+      wrapper.appendChild(fileInput);
+      wrapper.appendChild(uploadBtn);
+      wrapper.appendChild(status);
+      wrapper.appendChild(preview);
+
+      // upload logic (client-side)
+      uploadBtn.addEventListener('click', async () => {
+        if(!fileInput.files || fileInput.files.length === 0){
+          status.innerText = 'Veuillez choisir un fichier.';
+          return;
+        }
+        const file = fileInput.files[0];
+        // basic client-side type/size checks
+        const allowed = [
+          'image/jpeg','image/jpg','image/png',
+          'application/pdf',
+          'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ];
+        if(!allowed.includes(file.type)){
+          status.innerText = 'Type de fichier non autorisé.';
+          return;
+        }
+        // optionally size check (example 8MB limit)
+        const MAX = 8 * 1024 * 1024;
+        if(file.size > MAX){
+          status.innerText = 'Fichier trop volumineux (max 8MB).';
+          return;
+        }
+
+        status.innerText = 'Upload...';
+        uploadBtn.disabled = true;
+
+        try {
+          const fd = new FormData();
+          fd.append('proof', file);
+
+          const token = localStorage.getItem('token'); // pass token if defined (optional)
+          const headers = {};
+          if(token) headers['Authorization'] = 'Bearer ' + token;
+
+          const resp = await fetch('/api/upload-proof', { method: 'POST', body: fd, headers });
+          const j = await resp.json().catch(()=>null);
+          if(!resp.ok || !j || !j.ok){
+            status.innerText = 'Upload échoué';
+            uploadBtn.disabled = false;
+            return;
+          }
+          // success: show preview / link and attach hidden inputs to parent form
+          status.innerText = 'Upload réussi';
+          // show preview for images
+          preview.innerHTML = '';
+          if(file.type.startsWith('image/')){
+            const img = document.createElement('img');
+            img.src = j.url;
+            img.alt = 'Preuve';
+            preview.appendChild(img);
+          } else {
+            const a = document.createElement('a');
+            a.href = j.url;
+            a.target = '_blank';
+            a.innerText = j.filename || 'Voir preuve';
+            preview.appendChild(a);
+          }
+
+          // attach hidden inputs to the modal form (we assume form is the nearest form ancestor)
+          // remove old if any
+          const form = wrapper.closest('form') || document.querySelector('.modal form');
+          if(form){
+            const existing = form.querySelector('input[name="proof_url"]');
+            if(existing) existing.remove();
+            const inUrl = document.createElement('input'); inUrl.type = 'hidden'; inUrl.name = 'proof_url'; inUrl.value = j.url || '';
+            form.appendChild(inUrl);
+
+            const existing2 = form.querySelector('input[name="proof_public_id"]');
+            if(existing2) existing2.remove();
+            const inId = document.createElement('input'); inId.type = 'hidden'; inId.name = 'proof_public_id'; inId.value = j.public_id || '';
+            form.appendChild(inId);
+
+            const existing3 = form.querySelector('input[name="proof_mime"]');
+            if(existing3) existing3.remove();
+            const inMime = document.createElement('input'); inMime.type = 'hidden'; inMime.name = 'proof_mime'; inMime.value = j.mimeType || '';
+            form.appendChild(inMime);
+
+            const existing4 = form.querySelector('input[name="proof_filename"]');
+            if(existing4) existing4.remove();
+            const inFn = document.createElement('input'); inFn.type = 'hidden'; inFn.name = 'proof_filename'; inFn.value = j.filename || '';
+            form.appendChild(inFn);
+          }
+
+        } catch (err){
+          console.warn('upload proof error', err);
+          status.innerText = 'Erreur upload';
+        } finally {
+          uploadBtn.disabled = false;
+        }
+      });
+
+      return wrapper;
+    }
+
+    // Modal code (unchanged logic expanded to compute & display amounts on payment selection)
+    // Remplace ENTIEREMENT la fonction openTransactionModal existante par ce bloc
+function openTransactionModal(base){
+  const modal = document.createElement('div'); modal.className = 'modal';
+  const box = document.createElement('div'); box.className = 'box';
+  modal.appendChild(box);
+
+  const h = document.createElement('h3'); h.innerText = 'Confirmer la transaction';
+  const small = document.createElement('div'); small.className = 'small'; small.innerText = `Type: ${base.type} — ${base.from} → ${base.to}`;
+  box.appendChild(h); box.appendChild(small);
+
+  const form = document.createElement('form');
+  form.style.display = 'flex'; form.style.flexDirection = 'column'; form.style.gap = '8px';
+  box.appendChild(form);
+
+  form.appendChild(createLabelInput('Prénom','firstName','text',true));
+  form.appendChild(createLabelInput('Nom','lastName','text',true));
+  form.appendChild(createLabelInput('Email','email','email',true));
+  form.appendChild(createLabelInput('Téléphone','phone','text',true));
+
+  const dyn = document.createElement('div'); dyn.id = 'tx-dynamic'; dyn.style.display='flex'; dyn.style.flexDirection='column'; dyn.style.gap='8px';
+  form.appendChild(dyn);
+
+  // compute amountTo using current rates
+  const computeAmountTo = async (amountFrom = base.amountFrom) => {
+    try {
+      const rate = await findRate(base.from, base.to);
+      return Number(amountFrom) * Number(rate);
+    } catch (e) { return Number(base.amountFrom || 0); }
+  };
+
+  (async function build(){
+    dyn.innerHTML = '';
+
+    // helper to inject upload input and preview area (used for payment types)
+    function appendProofUploader(container) {
+      const wrapper = document.createElement('div');
+      const lbl = document.createElement('label'); lbl.innerText = 'Preuve de paiement (optionnel)';
+      const fi = document.createElement('input');
+      fi.type = 'file';
+      fi.name = 'proofFile';
+      fi.accept = 'image/*,.jpg,.jpeg,.png,.pdf,.doc,.docx';
+      wrapper.appendChild(lbl);
+      wrapper.appendChild(fi);
+      // preview area
+      const preview = document.createElement('div'); preview.className = 'small muted'; preview.style.marginTop = '6px';
+      wrapper.appendChild(preview);
+      // show file name on change
+      
+      container.appendChild(wrapper);
+      return fi;
+    }
+
+    if(base.type === 'crypto-fiat'){
+      dyn.appendChild(createLabel('Réseau d\'envoi'));
+      const sendNet = buildNetworkSelect('sendNetwork');
+      dyn.appendChild(sendNet);
+
+      const sendAddrBox = document.createElement('div'); sendAddrBox.className='network-address';
+      sendAddrBox.innerHTML = `<div class="tx-instruction">Adresse d'envoi</div><div class="tx-note muted">Choisissez le réseau d'envoi pour afficher l'adresse à laquelle envoyer votre crypto.</div><div id="send-address">-</div>`;
+      dyn.appendChild(sendAddrBox);
+
+      dyn.appendChild(createLabel('Moyen de réception (où recevoir la monnaie locale)'));
+      const recvMethodSelect = buildPaymentMethodSelect('recvPaymentMethod','fiat');
+      dyn.appendChild(recvMethodSelect);
+
+      dyn.appendChild(createLabelInput('Compte / numéro de réception','recvAccount','text',true));
+
+      // add optional proof uploader (useful if user wants to upload screenshot even for crypto-fiat)
+      appendProofUploader(dyn);
+
+      sendNet.addEventListener('change', async () => {
+        const net = sendNet.value;
+        const found = paymentsCache.find(p => (p.type||'') === 'crypto' && (p.network||'').toUpperCase() === (net||'').toUpperCase() && p.active);
+        const details = found ? (found.details || found.addressOrAccount || '') : (networkAddresses[net] || (`ADRESSE_${net}_PAR_DEFAUT`));
+        const amountTo = await computeAmountTo();
+        const txt = `<div class="tx-note">Envoyer <strong>${base.amountFrom}</strong> ${base.from} (≈ <strong>${amountTo.toFixed(6)} ${base.to}</strong>) vers :</div><div style="margin-top:6px;font-family:monospace">${escapeHtml(details)}</div>`;
+        sendAddrBox.querySelector('#send-address').innerHTML = txt;
+      });
+
+      recvMethodSelect.addEventListener('change', async () => {
+        const opt = recvMethodSelect.selectedOptions[0];
+        let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
+        if(!details){
+          const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
+          const found = paymentsCache.find(p => String(p._id) === String(val));
+          details = found ? (found.details || found.addressOrAccount || '') : '';
+        }
+        let note = dyn.querySelector('.recv-method-note');
+        if(!note){ note = document.createElement('div'); note.className = 'recv-method-note muted'; dyn.appendChild(note); }
+        const amountTo = await computeAmountTo();
+       
+      });
+
+    } else if(base.type === 'crypto-crypto'){
+      dyn.appendChild(createLabel('Réseau d\'envoi'));
+      const sendNet = buildNetworkSelect('sendNetwork');
+      dyn.appendChild(sendNet);
+
+      const sendAddrBox = document.createElement('div'); sendAddrBox.className='network-address';
+      sendAddrBox.innerHTML = `<div class="tx-instruction">Adresse d'envoi</div><div class="tx-note muted">Choisissez le réseau d'envoi pour afficher l'adresse.</div><div id="send-address">-</div>`;
+      dyn.appendChild(sendAddrBox);
+
+      dyn.appendChild(createLabel('Réseau de réception'));
+      const recvNet = buildNetworkSelect('recvNetwork');
+      dyn.appendChild(recvNet);
+
+      dyn.appendChild(createLabelInput('Adresse crypto destinataire','recvAddress','text',true));
+
+      // allow proof upload (tx screenshot) if user wants
+      appendProofUploader(dyn);
+
+      sendNet.addEventListener('change', async () => {
+        const net = sendNet.value;
+        const found = paymentsCache.find(p => (p.type||'') === 'crypto' && (p.network||'').toUpperCase() === (net||'').toUpperCase() && p.active);
+        const details = found ? (found.details || found.addressOrAccount || '') : (networkAddresses[net] || (`ADRESSE_${net}_PAR_DEFAUT`));
+        const txt = `<div class="tx-note">Envoyer <strong>${base.amountFrom}</strong> ${base.from} vers :</div><div style="margin-top:6px;font-family:monospace">${escapeHtml(details)}</div>`;
+        sendAddrBox.querySelector('#send-address').innerHTML = txt;
+      });
+
+    } else if(base.type === 'fiat-crypto'){
+      dyn.appendChild(createLabel('Moyen de paiement (comment vous payez)'));
+      const paySel = buildPaymentMethodSelect('payMethod','fiat');
+      dyn.appendChild(paySel);
+
+      const payBox = document.createElement('div'); payBox.className='network-address';
+      payBox.innerHTML = `<div class="tx-instruction">Informations paiement</div><div class="tx-note muted">Choisissez un moyen pour afficher le numéro/compte à utiliser et envoyer le montant à échanger.</div><div id="pay-info">-</div>`;
+      dyn.appendChild(payBox);
+
+      dyn.appendChild(createLabel('Réseau de réception (où recevoir la crypto)'));
+      const recvNet = buildNetworkSelect('recvNetwork');
+      dyn.appendChild(recvNet);
+
+      dyn.appendChild(createLabelInput('Adresse crypto de réception','recvAddress','text',true));
+
+      // add proof uploader for fiat payments
+      const proofInput = appendProofUploader(dyn);
+
+      paySel.addEventListener('change', async () => {
+        const opt = paySel.selectedOptions[0];
+        let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
+        if(!details){
+          const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
+          const found = paymentsCache.find(p => String(p._id) === String(val));
+          details = found ? (found.details || found.addressOrAccount || '') : '';
+        }
+        const amountTo = await computeAmountTo();
+        // show details + amount to send + equivalent
+        payBox.querySelector('#pay-info').innerHTML = details
+          ? `<div style="font-family:monospace">${escapeHtml(details)}</div><div class="small muted" style="margin-top:6px">Envoyer <strong>${base.amountFrom}</strong> ${base.from} (≈ <strong>${amountTo.toFixed(6)} ${base.to}</strong>).</div>`
+          : '-';
+      });
+
+    } else if(base.type === 'fiat-fiat'){
+      dyn.appendChild(createLabel('Moyen de paiement (payer)'));
+      const paySel = buildPaymentMethodSelect('payMethod','fiat');
+      dyn.appendChild(paySel);
+
+      const payBox = document.createElement('div'); payBox.className='network-address';
+      payBox.innerHTML = `<div class="tx-instruction">Infos paiement</div><div class="tx-note muted">Choisissez un moyen pour afficher le numéro/compte à utiliser, et envoyer le montant à échanger.</div><div id="pay-info">-</div>`;
+      dyn.appendChild(payBox);
+
+      dyn.appendChild(createLabel('Moyen de réception (recevoir)'));
+      const recvSel = buildPaymentMethodSelect('recvPaymentMethod','fiat');
+      dyn.appendChild(recvSel);
+
+      dyn.appendChild(createLabelInput('Compte / numéro de réception','recvAccount','text',true));
+
+      // proof uploader
+      const proofInput = appendProofUploader(dyn);
+
+      paySel.addEventListener('change', async () => {
+        const opt = paySel.selectedOptions[0];
+        let details = opt && opt.dataset && opt.dataset.details ? decodeURIComponent(opt.dataset.details) : '';
+        if(!details){
+          const val = opt && opt.value ? decodeURIComponent(opt.value) : null;
+          const found = paymentsCache.find(p => String(p._id) === String(val));
+          details = found ? (found.details || found.addressOrAccount || '') : '';
+        }
+        const amountTo = await computeAmountTo();
+        payBox.querySelector('#pay-info').innerHTML = details
+          ? `<div style="font-family:monospace">${escapeHtml(details)}</div><div class="small muted" style="margin-top:6px">Envoyer <strong>${base.amountFrom}</strong> ${base.from} (≈ <strong>${amountTo.toFixed(6)} ${base.to}</strong>).</div>`
+          : '-';
+      });
+    }
+  })();
+
+  // actions
+  const actions = document.createElement('div');
+  actions.style.display = 'flex'; actions.style.justifyContent='flex-end'; actions.style.gap = '8px'; actions.style.marginTop='10px';
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn ghost'; cancel.innerText = 'Annuler';
+  const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'btn'; submit.innerText = 'Confirmer';
+  actions.appendChild(cancel); actions.appendChild(submit);
+  form.appendChild(actions);
+
+  cancel.addEventListener('click', (e)=>{ e.preventDefault(); modal.remove(); });
+
+  // Helper: find file input in form (if any)
+  function findProofFileInput(formEl) {
+    return formEl.querySelector('input[type="file"][name="proofFile"]');
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submit.disabled = true; submit.innerText = 'Envoi...';
+
+    // gather form fields
+    const fd = new FormData(form);
+    const details = {};
+    for (const [k,v] of fd.entries()) details[k] = v;
+
+    // find chosen proof file input
+    const fileInput = findProofFileInput(form);
+    let proof = null;
+
+    // If a file selected -> upload it first to /api/upload-proof (FormData)
+    try {
+      if (fileInput && fileInput.files && fileInput.files.length > 0) {
+        const f = fileInput.files[0];
+        const up = new FormData();
+        up.append('file', f, f.name);
+        // Option: if you already created the tx first you could pass txId here; we do upload-first (Option A)
+        const upRes = await fetch('/api/upload-proof', { method: 'POST', body: up });
+        const upJson = await upRes.json().catch(()=>null);
+        if (!upRes.ok || !upJson || !upJson.success) {
+          console.warn('upload-proof failed', upJson);
+          // don't abort completely: allow transaction creation without proof if upload failed
+        } else {
+          proof = upJson.proof || null;
+        }
+      }
+    } catch (uplErr) {
+      console.warn('upload error', uplErr);
+      // continue and create transaction without proof
+    }
+
+    try {
+      // compute amountTo from rates as final value
+      const rate = await findRate(base.from, base.to);
+      const amountTo = Number(base.amountFrom) * Number(rate);
+
+      const tx = {
+        from: base.from,
+        to: base.to,
+        amountFrom: Number(base.amountFrom),
+        amountTo: Number(amountTo),
+        type: base.type,
+        details,
+        proof // may be null
+      };
+
+      // prepare headers
+      const token = localStorage.getItem('token');
+      const headers = {'Content-Type':'application/json'};
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+
+      const resp = await fetch('/api/transactions', { method: 'POST', headers, body: JSON.stringify(tx) });
+      const j = await resp.json().catch(()=>null);
+      if (resp.ok && j && j.success) {
+        alert('Transaction enregistrée (pending).');
+        const local = JSON.parse(localStorage.getItem('guestTx') || '[]');
+        local.unshift({ ...tx, status: 'pending', createdAt: new Date().toISOString(), _id: j.transaction ? j.transaction._id : ('local_'+Date.now()) });
+        localStorage.setItem('guestTx', JSON.stringify(local));
+        modal.remove(); window.location.href = '/historique';
+        return;
+      } else {
+        console.warn('tx create not ok', j);
+      }
+    } catch (err) {
+      console.warn('submit error', err);
+    }
+
+    // fallback: save local
+    const local = JSON.parse(localStorage.getItem('guestTx') || '[]');
+    local.unshift({ from: base.from, to: base.to, amountFrom: base.amountFrom, amountTo: base.amountFrom, type: base.type, details, status: 'pending', createdAt: new Date().toISOString(), _id: 'local_'+Date.now(), proof });
+    localStorage.setItem('guestTx', JSON.stringify(local));
+    alert('Serveur indisponible — transaction sauvegardée localement.');
+    modal.remove(); window.location.href = '/historique';
+  });
+
+  modal.addEventListener('click', (e)=> { if(e.target === modal) modal.remove(); });
+
+  document.body.appendChild(modal);
+  const first = form.querySelector('input[name="firstName"]');
+  if(first) first.focus();
+}
+
+
+    function createLabel(text){
+      const l = document.createElement('label'); l.innerText = text; return l;
+    }
+    function createLabelInput(labelText, name, type='text', required=false){
+      const wrapper = document.createElement('div');
+      const l = document.createElement('label'); l.innerText = labelText;
+      const inp = document.createElement('input'); inp.name = name; inp.type = type; if(required) inp.required = true;
+      wrapper.appendChild(l); wrapper.appendChild(inp);
+      return wrapper;
+    }
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    doBtn.addEventListener('click', async () => {
+      const from = (fromEl.value || '').toUpperCase();
+      const to = (toEl.value || '').toUpperCase();
+      const amt = Number(amtEl.value || 0);
+      if(!from || !to || !amt){ alert('Veuillez remplir les champs'); return; }
+      const type = determineType(from,to);
+      await loadPayments(); // ensure paymentsCache ready
+      openTransactionModal({ from, to, amountFrom: amt, type });
+    });
+
+    (async function init(){
+      await loadPayments();
+      await loadRatesOptions();
+      calculate();
+    })();
+
+    window.PYExchange = { loadPayments, loadRatesOptions, paymentsCache };
+  })();
+  </script>
 
   <!-- socket client (optional) -->
   <script src="/socket.io/socket.io.js"></script>
