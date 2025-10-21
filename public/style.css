@@ -29,7 +29,7 @@ body{
   /* background image with subtle overlay */
   background-image:
     linear-gradient(180deg, rgba(11,118,209,0.025), rgba(31,169,255,0.02)),
-    url('/backi.png');
+    url('/backiv2.jpeg');
   background-repeat:no-repeat;
   background-size:cover;
   background-position:center;
@@ -281,7 +281,7 @@ html::-webkit-scrollbar { height: 12px; width: 12px; }
       /* image in public/backi (you said you'll place it there) */
       background:
         linear-gradient(180deg, rgba(11,118,209,0.06), rgba(11,118,209,0.02)),
-        url('/backi') center/cover no-repeat;
+        url('/backiv2.jpeg') center/cover no-repeat;
       /* keep a subtle base color fallback for areas where image doesn't cover */
       background-color: #eaf4fb;
     }

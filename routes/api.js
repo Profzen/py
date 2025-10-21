@@ -1,6 +1,6 @@
 // routes/api.js
-// Routes publiques et API (prices, market_chart, news, transactions, rates)
-// Mis à jour pour stocker la preuve (proof) dans details.proof si fournie.
+// Routes publiques et API (prices, market_chart, news, transactions, rates/currencies, price)
+// Mis à jour pour utiliser services/priceService.js et le nouveau modèle Rate (qui représente désormais des currencies)
 
 const express = require('express');
 const router = express.Router();
@@ -8,16 +8,20 @@ const axios = require('axios');
 const jwt = require('jsonwebtoken');
 
 const News = require('../models/News');
-const Rate = require('../models/Rate');
+const Rate = require('../models/Rate'); // nouveau modèle "currency"
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
 const PaymentMethod = require('../models/PaymentMethod'); // Assure-toi que ce modèle existe
 
 const mailer = require('./mail');
 
+const createPriceService = require('../services/priceService');
+const priceService = createPriceService({ autoInit: true, refreshMs: 30_000, maxConcurrent: 6 });
+
 const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3';
 
 // --- prices cache (simple) ---
+// conserve la route existante qui appelle CoinGecko (liste restée identique)
 let pricesCache = null, pricesFetched = 0;
 const PRICES_TTL = 30 * 1000;
 
@@ -77,14 +81,29 @@ router.get('/news', async (req, res) => {
   }
 });
 
-// --- rates ---
+// --- rates / currencies ---
+// Note: Rate model now represents a currency (symbol, type, active, displayOrder, meta...)
+// Keep /rates for backward-compat, and add /currencies which is clearer.
+
+// GET /api/rates  (legacy name — retourne la liste des currencies)
 router.get('/rates', async (req, res) => {
   try {
-    const rates = await Rate.find().sort({ pair: 1 });
+    const rates = await Rate.find().sort({ displayOrder: 1, symbol: 1 }).lean();
     res.json(rates);
   } catch (err) {
-    console.error('GET /api/rates err', err);
+    console.error('GET /api/rates err', err && (err.message || err));
     res.status(500).json({ error: 'Impossible de récupérer rates' });
+  }
+});
+
+// GET /api/currencies  (nomenclature plus explicite)
+router.get('/currencies', async (req, res) => {
+  try {
+    const currencies = await Rate.find().sort({ displayOrder: 1, symbol: 1 }).lean();
+    res.json(currencies);
+  } catch (err) {
+    console.error('GET /api/currencies err', err && (err.message || err));
+    res.status(500).json({ error: 'Impossible de récupérer currencies' });
   }
 });
 
@@ -116,6 +135,86 @@ async function getUserFromHeader(req) {
     return null;
   }
 }
+
+/**
+ * GET /api/price?pair=USDT-XOF
+ * Returns the latest cached/remote price for a pair using services/priceService.js
+ * Response:
+ * {
+ *   pair, coinbasePrice, buyPriceForUs, sellPriceForUs, lastUpdated,
+ *   (optional) quote: { amountProvided, amountConverted, note }
+ * }
+ *
+ * Optional query parameters:
+ * - amount (number) : interpreted as amount in BASE (crypto) to be converted to QUOTE
+ * - operation (string) : 'sell' (client sells crypto -> we buy at buyPriceForUs) OR 'buy' (client buys crypto -> we sell at sellPriceForUs)
+ *
+ * Example:
+ * GET /api/price?pair=USDT-XOF&amount=1&operation=sell
+ */
+router.get('/price', async (req, res) => {
+  try {
+    const pair = (req.query.pair || '').toString().trim().toUpperCase();
+    if (!pair) return res.status(400).json({ error: 'Query param pair is required (e.g. USDT-XOF)' });
+
+    // normalize pair to format BASE-QUOTE
+    const normalized = pair.replace(/\s+/g, '').replace(/[_]/g, '-');
+
+    // get price from service (will fetch & cache as necessary)
+    const data = await priceService.getPrice(normalized); // { pair, coinbasePrice, buyPriceForUs, sellPriceForUs, lastUpdated }
+
+    // optional conversion if amount provided
+    const amountParam = req.query.amount;
+    const operation = (req.query.operation || '').toString().toLowerCase(); // 'sell' or 'buy'
+    let quote = null;
+    if (amountParam !== undefined && amountParam !== null && amountParam !== '') {
+      const amount = Number(amountParam);
+      if (!Number.isFinite(amount) || amount < 0) {
+        return res.status(400).json({ error: 'amount must be a positive number' });
+      }
+      // Interpret amount as amount in BASE (crypto). Convert to QUOTE (fiat) using appropriate price:
+      // - operation === 'sell' -> client sells crypto -> we buy, use buyPriceForUs
+      // - operation === 'buy'  -> client buys crypto -> we sell, use sellPriceForUs
+      const priceUsed = (operation === 'sell') ? data.buyPriceForUs : (operation === 'buy') ? data.sellPriceForUs : null;
+      if (priceUsed === null) {
+        // if no operation provided, return both conversions (using buy and sell)
+        quote = {
+          amountBase: amount,
+          usingBuyPriceForUs: {
+            price: data.buyPriceForUs,
+            amountQuote: Number((amount * data.buyPriceForUs).toFixed(6))
+          },
+          usingSellPriceForUs: {
+            price: data.sellPriceForUs,
+            amountQuote: Number((amount * data.sellPriceForUs).toFixed(6))
+          },
+          note: 'amount interpreted as BASE (crypto). Use operation=sell (client sells) or operation=buy (client buys) to get single conversion.'
+        };
+      } else {
+        quote = {
+          amountBase: amount,
+          priceUsed,
+          amountQuote: Number((amount * priceUsed).toFixed(6)),
+          note: `Converted amount in QUOTE currency using ${operation === 'sell' ? 'buyPriceForUs (we buy from client)' : 'sellPriceForUs (we sell to client)'}`
+        };
+      }
+    }
+
+    const resp = {
+      pair: data.pair,
+      coinbasePrice: data.coinbasePrice,
+      buyPriceForUs: data.buyPriceForUs,
+      sellPriceForUs: data.sellPriceForUs,
+      lastUpdated: data.lastUpdated,
+      ...(quote ? { quote } : {})
+    };
+
+    res.json(resp);
+  } catch (err) {
+    console.error('GET /api/price err', err && (err.message || err));
+    res.status(500).json({ error: 'Impossible de récupérer le prix pour cette paire', details: String(err) });
+  }
+});
 
 /**
  * POST /api/transactions
