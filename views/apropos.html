@@ -133,6 +133,22 @@
         align-items: center;
       }
     }
+    html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: 
+    linear-gradient(180deg, rgba(11,118,209,0.06), rgba(11,118,209,0.02)),
+    url('/backiv2.jpeg') center center / cover no-repeat fixed;
+  background-attachment: fixed; /* l'image reste fixe même en scroll */
+  background-size: cover;       /* occupe tout l'écran */
+  background-position: center;  /* centrée verticalement et horizontalement */
+  min-height: 100vh;            /* assure couverture totale */
+  background-color: #eaf4fb;    /* couleur de fond si image non chargée */
+}
   </style>
 </head>
 

@@ -157,6 +157,7 @@ function briefTxHtml(tx, clientEmail, includeProof = false, attachments = []) {
   html += renderDetailsHtml(tx.details || {});
   html += `</div>`;
 
+  // If admin may want price snapshot included, it will be part of tx.details or top-level tx when includeProof true — briefTxHtml doesn't decide that
   html += `<div style="margin-top:14px;font-size:13px;color:#666">Cordialement,<br/>L'équipe PY Crypto</div>`;
   html += `</div>`;
 
@@ -176,6 +177,32 @@ function briefTxText(tx, clientEmail, includeProof = false) {
   return txt;
 }
 
+/**
+ * Sanitize a transaction object to remove sensitive snapshot info before sending to client.
+ * It will shallow-clone tx and remove a set of known snapshot keys from top-level and from details.
+ */
+function sanitizeTxForClient(tx) {
+  if (!tx || typeof tx !== 'object') return tx;
+  // shallow clone top-level
+  const cloned = { ...tx };
+  // remove known snapshot fields on top-level
+  delete cloned.priceSnapshot;
+  delete cloned.snapshot_price;
+  delete cloned.snapshot_coinbase;
+  delete cloned.snapshot_timestamp;
+  // sanitize details (clone)
+  const det = (tx.details && typeof tx.details === 'object') ? { ...tx.details } : {};
+  // remove snapshot keys from details if present
+  delete det.priceSnapshot;
+  delete det.snapshot_price;
+  delete det.snapshot_coinbase;
+  delete det.snapshot_timestamp;
+  // attach sanitized details
+  cloned.details = det;
+  // Also ensure proof stays unchanged (we don't remove proof here)
+  return cloned;
+}
+
 async function sendMailSafe(mailOptions) {
   try {
     const tr = await createTransporter();
@@ -192,8 +219,8 @@ async function sendMailSafe(mailOptions) {
 
 /**
  * sendTransactionCreated:
- * - client receives summary WITHOUT any proof (no link, no image)
- * - admin receives summary WITH proof (inline image if image-type, otherwise link)
+ * - client receives summary WITHOUT any price snapshot fields
+ * - admin receives summary WITH proof + full transaction object (including snapshot if any)
  */
 async function sendTransactionCreated(tx, clientEmail) {
   // prepare admin attachments if proof is image-like
@@ -213,15 +240,16 @@ async function sendTransactionCreated(tx, clientEmail) {
     }
   }
 
-  // Client mail (NO proof)
+  // Client mail (NO price snapshot)
+  const sanitizedTx = sanitizeTxForClient(tx);
   const subjectClient = `Confirmation : transaction initialisée (${tx._id})`;
-  const textClient = `Bonjour,\n\nVotre transaction a bien été enregistrée et est en statut pending.\n\n${briefTxText(tx, clientEmail, false)}\n\nCordialement,\nPY Crypto`;
-  const htmlClient = `<div>${briefTxHtml(tx, clientEmail, false)}</div>`;
+  const textClient = `Bonjour,\n\nVotre transaction a bien été enregistrée et est en statut pending.\n\n${briefTxText(sanitizedTx, clientEmail, false)}\n\nCordialement,\nPY Crypto`;
+  const htmlClient = `<div>${briefTxHtml(sanitizedTx, clientEmail, false)}</div>`;
 
-  // Admin mail (INCLUDE proof if any)
+  // Admin mail (INCLUDE proof + full tx)
   const subjectAdmin = `[ADMIN] Nouvelle transaction (${tx._id})`;
   const textAdmin = `Nouvelle transaction créée:\n\n${briefTxText(tx, clientEmail, true)}`;
-  const htmlAdmin = `<div><h3>Nouvelle transaction enregistrée</h3>${briefTxHtml(tx, clientEmail, true, attachments)}</div>`;
+  const htmlAdmin = `<div><h3>Nouvelle transaction enregistrée</h3>${briefTxHtml(tx, clientEmail, true, attachments)}<pre style="background:#f7fafc;padding:8px;border-radius:6px;margin-top:12px">${escapeHtml(JSON.stringify(tx, null, 2))}</pre></div>`;
 
   const promises = [];
 
@@ -253,8 +281,8 @@ async function sendTransactionCreated(tx, clientEmail) {
 
 /**
  * sendTransactionStatusChanged:
- * - client: receives status update WITHOUT proof
- * - admin: receives status update WITH proof if available
+ * - client: receives status update WITHOUT price snapshot
+ * - admin: receives status update WITH proof and full tx (incl. snapshot)
  */
 async function sendTransactionStatusChanged(tx, clientEmail) {
   if (!clientEmail) return { ok: false, error: 'no-client-email' };
@@ -276,13 +304,15 @@ async function sendTransactionStatusChanged(tx, clientEmail) {
     }
   }
 
+  const sanitizedTx = sanitizeTxForClient(tx);
+
   const subjectClient = `Mise à jour statut transaction (${tx._id}) : ${tx.status}`;
-  const textClient = `Bonjour,\n\nLe statut de votre transaction ${tx._id} a été mis à jour: ${tx.status}\n\n${briefTxText(tx, clientEmail, false)}\n\nCordialement,\nPY Crypto`;
-  const htmlClient = `<div>${briefTxHtml(tx, clientEmail, false)}</div>`;
+  const textClient = `Bonjour,\n\nLe statut de votre transaction ${tx._id} a été mis à jour: ${tx.status}\n\n${briefTxText(sanitizedTx, clientEmail, false)}\n\nCordialement,\nPY Crypto`;
+  const htmlClient = `<div>${briefTxHtml(sanitizedTx, clientEmail, false)}</div>`;
 
   const subjectAdmin = `[ADMIN] Mise à jour statut transaction (${tx._id}) : ${tx.status}`;
-  const textAdmin = `Transaction ${tx._1d} statut: ${tx.status}\n\n${briefTxText(tx, clientEmail, true)}`;
-  const htmlAdmin = `<div><h3>Mise à jour statut</h3>${briefTxHtml(tx, clientEmail, true, attachments)}</div>`;
+  const textAdmin = `Transaction ${tx._id} statut: ${tx.status}\n\n${briefTxText(tx, clientEmail, true)}`;
+  const htmlAdmin = `<div><h3>Mise à jour statut</h3>${briefTxHtml(tx, clientEmail, true, attachments)}<pre style="background:#f7fafc;padding:8px;border-radius:6px;margin-top:12px">${escapeHtml(JSON.stringify(tx, null, 2))}</pre></div>`;
 
   const results = await Promise.all([
     sendMailSafe({
