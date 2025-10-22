@@ -1,4 +1,4 @@
-// public/js/admin.js (version corrigée & plus résistante)
+// public/js/admin.js (currencies-aware)
 (function(){
   // helpers
   const $ = sel => document.querySelector(sel);
@@ -58,10 +58,11 @@
   const nFile = $('#n-file'), nPreview = $('#n-preview'), nTitle = $('#n-title'), nDesc = $('#n-desc'), nContent = $('#n-content'), nId = $('#n-id');
   const nImageUrlHidden = $('#n-image-url'), nImageMeta = $('#n-image-meta'), nImageUrlLink = $('#n-image-url-link'), nImageInfo = $('#n-image-info'), nImageRemove = $('#n-image-remove');
   const newsList = $('#news-list'), btnLoadNews = $('#btn-load-news'), btnSeed = $('#btn-seed-sample');
-  const ratesList = $('#rates-list'), rPair = $('#r-pair'), rValue = $('#r-value'), rAdd = $('#r-add'), btnRefresh = $('#btn-refresh');
+  // currencies DOM
+  const ratesList = $('#rates-list'); // keep name for compatibility
   const ratesFilter = $('#rates-filter'), ratesRefreshBtn = $('#rates-refresh');
-
-  // Payments DOM refs (guarded)
+  const rSymbol = $('#r-symbol'), rName = $('#r-name'), rType = $('#r-type'), rAdd = $('#r-add'), btnRefresh = $('#btn-refresh');
+  // Payments DOM refs
   const pmListEl = $('#payments-list'), pmSearch = $('#pm-search'), pmRefresh = $('#pm-refresh');
   const pmId = $('#pm-id'), pmName = $('#pm-name'), pmType = $('#pm-type'), pmNetwork = $('#pm-network'), pmDetails = $('#pm-details'), pmActive = $('#pm-active');
   const pmSave = $('#pm-save'), pmClear = $('#pm-clear');
@@ -72,78 +73,37 @@
     return !!el;
   }
 
-  // Upload helper (tries multiple endpoints)
+  // minimal upload helper (kept from previous)
   async function uploadFileToServer(file){
     if(!file) return null;
-    // endpoints to try (order: most likely)
     const candidates = ['/api/upload-proof','/admin/upload','/api/upload','/upload','/admin/upload-proof','/api/admin/upload'];
-    const fd = new FormData();
-    fd.append('file', file);
+    const fd = new FormData(); fd.append('file', file);
     const token = localStorage.getItem('token');
-
     for(const ep of candidates){
       try {
         const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
         const res = await fetch(ep, { method: 'POST', headers, body: fd });
-        // try parse json first
         let json = null;
         try { json = await res.clone().json(); } catch(e){ /* not json */ }
-        // If JSON and success-like shape
         if(json){
-          // common shapes:
-          // { success: true, url, public_id, mimeType }
-          // { url: '...', public_id: '...' }
-          // { ok: true, file: '...' }
-          const url = json.url || json.file || json.location || json.result && json.result.secure_url || null;
-          const public_id = json.public_id || (json.result && json.result.public_id) || json.file_id || null;
+          const url = json.url || json.file || json.location || (json.result && json.result.secure_url) || null;
+          const public_id = json.public_id || (json.result && json.result.public_id) || null;
           const mime = json.mime || json.mimeType || (file && file.type) || null;
           if(url) return { url, public_id, mime };
-          // sometimes response contains nested payload
-          if(json.data && (json.data.url || json.data.file)) {
-            return { url: json.data.url || json.data.file, public_id: json.data.public_id || null, mime: mime };
-          }
-          // if it has "success" true but no url, still return json for caller to inspect
-          if(json.success && (json.url || json.file)) {
-            return { url: json.url || json.file, public_id: json.public_id || null, mime };
-          }
         }
-
-        // fallback: try text and find URL pattern
         const text = await res.clone().text().catch(()=>null);
-        if(text){
-          // attempt to find an http(s) url in text
-          const m = text.match(/https?:\/\/[^\s'"]+/);
-          if(m && m[0]) {
-            return { url: m[0], public_id: null, mime: file.type || null };
-          }
-        }
-
-        // If response OK and no JSON but contains body with path - attempt to interpret
-        if(res.ok && json === null && text){
-          // try to treat text as url
-          if(text.trim().startsWith('http')) return { url: text.trim(), public_id: null, mime: file.type || null };
-        }
-
-        // otherwise try next endpoint
-        if(res.status === 404 || res.status === 405 || res.status === 501){
-          // try next
-          continue;
-        }
+        if(text && text.trim().startsWith('http')) return { url: text.trim(), public_id: null, mime: file.type || null };
       } catch(err){
-        console.warn('upload attempt failed for', ep, err && (err.message || err));
         continue;
       }
     }
-    // nothing worked
     throw new Error('Aucun endpoint d\'upload disponible (checked multiple paths)');
   }
 
   /* ---------------------------
      Transactions (client-side pagination)
      --------------------------- */
-  let transactionsCache = []; // full list returned by /admin/transactions
-  let txPage = 0;
-  const TX_PAGE_SIZE = 10;
+  let transactionsCache = []; let txPage = 0; const TX_PAGE_SIZE = 10;
 
   async function loadTransactions(){
     if(!requireEl(txTbody,'tx-tbody')) return;
@@ -208,8 +168,7 @@
             <button class="btn" data-id="${id}" data-action="approve">Valider</button>
             <button class="btn ghost" data-id="${id}" data-action="reject">Rejeter</button>
           </div>
-        </div>`;
-      }).join('');
+        </div>`; }).join('');
     }
 
     const filteredCount = filtered.length;
@@ -433,7 +392,6 @@
     return s.replace(/\r\n/g,'\n').replace(/\n/g,'<br>');
   }
 
-  // Helper to display image meta UI after upload or when editing existing news
   function showImageMeta(url, publicId){
     if(!nImageMeta || !nImageUrlLink) return;
     nImageUrlLink.href = url || '#';
@@ -490,7 +448,7 @@
     });
   }
 
-  // update - scroll to top of editor when editing
+  // update news
   window.editNews = function(id){
     const found = window.__newsCache && window.__newsCache.find(n => (n._id === id || n.id === id));
     if(!found) return alert('News introuvable');
@@ -538,7 +496,7 @@
     });
   }
 
-  // Render news list with collapse + toggle
+  // Render news list
   function renderNewsList(news){
     if(!news || news.length === 0){ if(newsList) newsList.innerHTML = '<div class="tiny muted">Aucune news</div>'; return; }
     window.__newsCache = news;
@@ -575,7 +533,7 @@
     }).join('');
   }
 
-  // delegate news edit/delete clicks & toggle
+  // delegate news clicks & toggle
   if(newsList){
     newsList.addEventListener('click', (ev) => {
       const toggleBtn = ev.target.closest('.news-toggle');
@@ -632,24 +590,60 @@
   }
 
   /* ---------------------------
-     RATE logic + search
+     CURRENCIES (previously rates) logic + search
      --------------------------- */
   let ratesCache = [];
+
+  // Loads currencies from /api/currencies (preferred) or fallback to /api/rates
   async function loadRates(){
     if(!requireEl(ratesList,'rates-list')) return;
     try {
-      const res = await fetch('/api/rates');
-      const rates = await res.json();
-      ratesCache = Array.isArray(rates) ? rates : [];
+      // prefer explicit endpoint
+      let res = await fetch('/api/currencies');
+      if(!res.ok) {
+        // fallback
+        res = await fetch('/api/rates');
+      }
+      const list = await res.json();
+      // Expect array of { _id, symbol, name, type, active, createdAt }
+      ratesCache = Array.isArray(list) ? list : [];
       renderRatesList(ratesCache);
-    } catch (e){ console.error(e); if(ratesList) ratesList.innerHTML = '<div class="tiny muted">Erreur chargement</div>'; }
+    } catch (e){
+      console.error('loadRates err', e);
+      if(ratesList) ratesList.innerHTML = '<div class="tiny muted">Erreur chargement</div>';
+    }
   }
 
   function renderRatesList(list){
+    if(!ratesList) return;
     const q = (ratesFilter && ratesFilter.value || '').trim().toLowerCase();
-    const filtered = list.filter(r => !q || (r.pair||'').toLowerCase().includes(q) || String(r.rate).toLowerCase().includes(q));
-    if(!filtered || filtered.length === 0){ if(ratesList) ratesList.innerHTML = '<div class="tiny muted">Aucun taux</div>'; return; }
-    ratesList.innerHTML = filtered.map(r => `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${escapeHtml(r.pair)}</strong><div class="tiny muted">${escapeHtml(r.desc||'')}</div></div><div><strong>${escapeHtml(String(r.rate))}</strong></div></div>`).join('');
+    const filtered = list.filter(r => {
+      if(!q) return true;
+      const s = (r.symbol || r.pair || '').toString().toLowerCase();
+      const n = (r.name || '').toString().toLowerCase();
+      const t = (r.type || '').toString().toLowerCase();
+      return s.includes(q) || n.includes(q) || t.includes(q);
+    });
+    if(!filtered || filtered.length === 0){ ratesList.innerHTML = '<div class="tiny muted">Aucune devise</div>'; return; }
+
+    // Render each currency with symbol, type, name, id and createdAt
+    ratesList.innerHTML = filtered.map(r => {
+      const id = r._id || r.id || '';
+      const symbol = (r.symbol || r.pair || '').toString().toUpperCase();
+      const name = r.name || (r.desc||'') || '';
+      const type = (r.type || 'crypto').toString();
+      const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div style="min-width:0">
+          <div style="font-weight:700">${escapeHtml(symbol)}</div>
+          <div class="tiny muted" style="margin-top:4px">${escapeHtml(type)}${name ? ' • ' + escapeHtml(name) : ''}</div>
+        </div>
+        <div style="text-align:right;min-width:120px">
+          <div class="tiny muted">id:${escapeHtml(id)}</div>
+          <div class="tiny muted">${escapeHtml(when)}</div>
+        </div>
+      </div>`;
+    }).join('');
   }
 
   if(ratesFilter) ratesFilter.addEventListener('input', ()=> renderRatesList(ratesCache));
@@ -657,15 +651,34 @@
 
   if(rAdd){
     rAdd.addEventListener('click', async () => {
-      const pair = rPair && rPair.value.trim(); const rate = parseFloat(rValue && rValue.value);
-      if(!pair || isNaN(rate)) return alert('Pair et valeur requis');
+      const symbol = rSymbol && rSymbol.value ? rSymbol.value.trim().toUpperCase() : '';
+      const name = rName && rName.value ? rName.value.trim() : '';
+      const type = rType && rType.value ? rType.value : 'crypto';
+      if(!symbol) return alert('Symbole requis (ex: BTC)');
+      // build payload
+      const payload = { symbol, name, type };
       try {
-        showLoader('Enregistrement taux…');
-        const res = await authFetch('/admin/rates', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ pair, rate }) });
+        showLoader('Enregistrement devise…');
+        // try admin currency endpoint first
+        let res = await authFetch('/admin/currencies', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+        if(!res.ok){
+          // fallback to admin/rates if server not updated (best-effort)
+          res = await authFetch('/admin/rates', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ pair: symbol, rate: 1, desc: name }) });
+        }
         const j = await res.json().catch(()=>null);
-        if(res.ok && j && j.success){ toast('Taux ajouté/modifié'); if(rPair) rPair.value=''; if(rValue) rValue.value=''; loadRates(); } else { console.error('rates add failed', res, j); toast('Erreur rates', false); }
-      } catch(e){ console.error(e); toast('Erreur', false); }
-      finally{ hideLoader(); }
+        if(res.ok && j && (j.success || j.rate || j.currency)){
+          toast('Devise ajoutée / modifiée');
+          if(rSymbol) rSymbol.value=''; if(rName) rName.value=''; if(rType) rType.value='crypto';
+          loadRates();
+        } else {
+          console.error('rAdd failed', res, j);
+          toast('Erreur enregistrement devise', false);
+          alert((j && j.message) || 'Erreur');
+        }
+      } catch(e){
+        console.error('rAdd err', e);
+        toast('Erreur serveur', false);
+      } finally{ hideLoader(); }
     });
   }
 

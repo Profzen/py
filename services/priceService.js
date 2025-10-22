@@ -140,7 +140,7 @@ class PriceService {
 
       // compute our applied prices
       const buyPriceForUs = this._roundNumeric(coinbasePrice * (1 - BUY_DISCOUNT));
-      const sellPriceForUs = this._roundNumeric(coinbasePrice * (1 + SELL_MARKUP));
+      const sellPriceForUs = this._roundNumeric(coinbasePrice * (1 - SELL_MARKUP));
       const lastUpdated = new Date();
 
       const entry = { pair, coinbasePrice, buyPriceForUs, sellPriceForUs, lastUpdated };

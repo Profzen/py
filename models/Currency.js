@@ -1,5 +1,5 @@
-// models/Rate.js en realité devrait s'appelé Currency.js(on fera le refacto plus tard)
-// Maintenant : modèle des monnaies disponibles (crypto / fiat) — pas des paires ni des taux
+// models/Currency.js
+// Schéma des devises disponibles (crypto / fiat)
 const mongoose = require('mongoose');
 
 const currencySchema = new mongoose.Schema({
@@ -9,11 +9,11 @@ const currencySchema = new mongoose.Schema({
     uppercase: true,
     trim: true,
     index: true,
-    unique: true, // ex: 'USDT', 'XOF', 'BTC'
+    unique: true // ex: 'USDT', 'XOF', 'BTC'
   },
   name: {
     type: String,
-    required: false, // ex: 'Tether', 'Franc CFA', 'Bitcoin'
+    required: false,
     trim: true,
     default: ''
   },
@@ -25,48 +25,48 @@ const currencySchema = new mongoose.Schema({
   },
   active: {
     type: Boolean,
-    default: true // si false, n'apparaitra pas dans les menus
+    default: true
   },
   displayOrder: {
     type: Number,
-    default: 0 // ordre d'affichage dans les menus
+    default: 0
   },
   meta: {
-    // champs optionnels, utiles pour futures intégrations (ex: logo cloudinary, decimals)
-    decimals: { type: Number, default: 6 }, // précision d'affichage pour les cryptos
+    decimals: { type: Number, default: 6 },
     logoUrl: { type: String, default: '' }
   }
 }, {
-  timestamps: true // createdAt, updatedAt automatiques
+  timestamps: true
 });
 
-//
-// Hooks & helpers
-//
+// Normalize symbol before save
 currencySchema.pre('save', function(next) {
   if (this.symbol) this.symbol = this.symbol.toUpperCase().trim();
   next();
 });
 
-// Static helper : récupère les monnaies actives triées
+// Static: get active currencies sorted
 currencySchema.statics.getActive = function() {
   return this.find({ active: true }).sort({ displayOrder: 1, symbol: 1 }).exec();
 };
 
-// Static helper : upsert (create/update) currency by symbol
+// Static: upsert by symbol (payload may contain symbol, name, type, active, displayOrder, decimals, logoUrl)
 currencySchema.statics.upsertBySymbol = async function(payload) {
   const symbol = (payload.symbol || '').toUpperCase().trim();
   if (!symbol) throw new Error('symbol is required for upsert');
+
   const update = {
-    name: payload.name || '',
+    name: typeof payload.name === 'string' ? payload.name : undefined,
     type: payload.type || 'crypto',
     active: typeof payload.active === 'boolean' ? payload.active : true,
     displayOrder: typeof payload.displayOrder === 'number' ? payload.displayOrder : 0,
-    'meta.decimals': typeof payload.decimals === 'number' ? payload.decimals : undefined,
-    'meta.logoUrl': payload.logoUrl || undefined
   };
 
-  // remove undefined keys from update
+  // meta fields
+  if (typeof payload.decimals === 'number') update['meta.decimals'] = payload.decimals;
+  if (typeof payload.logoUrl === 'string') update['meta.logoUrl'] = payload.logoUrl;
+
+  // remove undefined
   Object.keys(update).forEach(k => update[k] === undefined && delete update[k]);
 
   return this.findOneAndUpdate(
@@ -76,4 +76,4 @@ currencySchema.statics.upsertBySymbol = async function(payload) {
   ).exec();
 };
 
-module.exports = mongoose.models.Rate || mongoose.model('Rate', currencySchema);
+module.exports = mongoose.models.Currency || mongoose.model('Currency', currencySchema);

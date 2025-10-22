@@ -1,5 +1,5 @@
 // routes/admin.js
-// Admin routes complete: news, transactions, rates, + payment-methods
+// Admin routes complete: news, transactions, currencies, + payment-methods
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
@@ -8,12 +8,12 @@ const mongoose = require('mongoose');
 
 const News = require('../models/News');
 const Transaction = require('../models/Transaction');
-const Rate = require('../models/Rate');
+const Currency = require('../models/Currency'); // NEW: currencies model
 const User = require('../models/user');
 
-const mailer = require('./mail'); // nouveau module mailer
+const mailer = require('./mail'); // mailer (best-effort)
 
-// cloudinary config
+// cloudinary config (kept)
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME || '',
   api_key: process.env.CLOUDINARY_API_KEY || '',
@@ -46,16 +46,13 @@ async function requireAdmin(req, res, next) {
 /* ---------- PAYMENT METHODS model bootstrap (use existing model if present) ---------- */
 let PaymentMethod;
 try {
-  // try to require an external model if it exists
   PaymentMethod = require('../models/PaymentMethod');
-  // if the module exports the model directly, ensure using it
   if (PaymentMethod && PaymentMethod.modelName) {
-    // likely the mongoose model itself, ok
+    // ok
   } else if (PaymentMethod && PaymentMethod.default && PaymentMethod.default.modelName) {
     PaymentMethod = PaymentMethod.default;
   }
 } catch (e) {
-  // fallback: define a minimal schema inline if models/PaymentMethod.js doesn't exist
   if (mongoose && !mongoose.models.PaymentMethod) {
     const pmSchema = new mongoose.Schema({
       name: { type: String, required: true },
@@ -191,18 +188,14 @@ router.post('/admin/transactions/:id/status', requireAdmin, async (req, res) => 
 
     // attempt to notify client by email
     try {
-      // try to obtain client email: prefer populated user
       let clientEmail = null;
       if (tx.user) {
-        // tx.user may be objectId or populated; try to fetch user email
         if (typeof tx.user === 'object' && tx.user.email) clientEmail = tx.user.email;
         else {
-          // try to populate
           const u = await User.findById(tx.user);
           if (u && u.email) clientEmail = u.email;
         }
       }
-      // fallback to details.email if present
       if (!clientEmail && tx.details && typeof tx.details === 'object') {
         clientEmail = tx.details.email || tx.details.emailAddress || null;
       }
@@ -223,53 +216,72 @@ router.post('/admin/transactions/:id/status', requireAdmin, async (req, res) => 
   }
 });
 
-/* ---------- RATES (CRUD) ---------- */
+/* ---------- CURRENCIES (CRUD) ---------- */
 
-// GET rates
-router.get('/admin/rates', requireAdmin, async (req, res) => {
+// GET currencies (admin)
+router.get('/admin/currencies', requireAdmin, async (req, res) => {
   try {
-    const rates = await Rate.find().sort({ pair: 1 });
-    res.json(rates);
+    const list = await Currency.find().sort({ displayOrder: 1, symbol: 1 });
+    return res.json({ success: true, currencies: list });
   } catch (err) {
-    console.error('GET /admin/rates err', err);
-    res.status(500).json({ success: false, message: 'Impossible de récupérer rates', error: String(err) });
+    console.error('GET /admin/currencies err', err);
+    return res.status(500).json({ success: false, message: 'Impossible de récupérer devises', error: String(err) });
   }
 });
 
-// POST add/update rate
-router.post('/admin/rates', requireAdmin, async (req, res) => {
+// POST create/update currency (upsert by symbol or id)
+// Accepts payload: { id?, symbol, name?, type?, active?, displayOrder?, decimals?, logoUrl? }
+router.post('/admin/currencies', requireAdmin, async (req, res) => {
   try {
-    const { pair, rate, desc } = req.body;
-    if (!pair || typeof rate === 'undefined') return res.status(400).json({ success: false, message: 'pair et rate requis' });
-
-    let r = await Rate.findOne({ pair });
-    if (r) {
-      r.rate = rate;
-      r.desc = desc || r.desc;
-      await r.save();
-      return res.json({ success: true, message: 'Taux mis à jour', rate: r });
-    } else {
-      r = new Rate({ pair, rate, desc: desc || '' });
-      await r.save();
-      return res.json({ success: true, message: 'Taux ajouté', rate: r });
+    const payload = req.body || {};
+    // If id provided -> update by id
+    if (payload.id) {
+      const doc = await Currency.findById(payload.id);
+      if (!doc) return res.status(404).json({ success: false, message: 'Devise introuvable' });
+      if (payload.symbol) doc.symbol = String(payload.symbol).toUpperCase().trim();
+      if (typeof payload.name === 'string') doc.name = payload.name;
+      if (payload.type) doc.type = payload.type;
+      if (typeof payload.active === 'boolean') doc.active = payload.active;
+      if (typeof payload.displayOrder === 'number') doc.displayOrder = payload.displayOrder;
+      if (payload.decimals !== undefined) doc.meta = doc.meta || {}, doc.meta.decimals = Number(payload.decimals);
+      if (payload.logoUrl !== undefined) doc.meta = doc.meta || {}, doc.meta.logoUrl = payload.logoUrl;
+      await doc.save();
+      return res.json({ success: true, message: 'Devise mise à jour', currency: doc });
     }
+
+    // else if symbol present -> upsertBySymbol
+    if (!payload.symbol || !String(payload.symbol).trim()) {
+      return res.status(400).json({ success: false, message: 'symbol requis pour créer/modifier la devise' });
+    }
+
+    const up = await Currency.upsertBySymbol({
+      symbol: payload.symbol,
+      name: payload.name,
+      type: payload.type,
+      active: typeof payload.active === 'boolean' ? payload.active : true,
+      displayOrder: typeof payload.displayOrder === 'number' ? payload.displayOrder : 0,
+      decimals: typeof payload.decimals === 'number' ? payload.decimals : undefined,
+      logoUrl: payload.logoUrl
+    });
+
+    return res.json({ success: true, message: 'Devise ajoutée/mise à jour', currency: up });
   } catch (err) {
-    console.error('POST /admin/rates err', err);
-    res.status(500).json({ success: false, message: 'Erreur rates', error: String(err) });
+    console.error('POST /admin/currencies err', err);
+    return res.status(500).json({ success: false, message: 'Erreur sauvegarde devise', error: String(err) });
   }
 });
 
-// DELETE rate
-router.delete('/admin/rates/:id', requireAdmin, async (req, res) => {
+// DELETE currency
+router.delete('/admin/currencies/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
-    const r = await Rate.findById(id);
-    if (!r) return res.status(404).json({ success: false, message: 'Taux introuvable' });
-    await Rate.findByIdAndDelete(id);
-    res.json({ success: true, message: 'Suppression du taux réussie' });
+    const doc = await Currency.findById(id);
+    if (!doc) return res.status(404).json({ success: false, message: 'Devise introuvable' });
+    await Currency.findByIdAndDelete(id);
+    return res.json({ success: true, message: 'Devise supprimée' });
   } catch (err) {
-    console.error('DELETE /admin/rates/:id err', err);
-    res.status(500).json({ success: false, message: 'Erreur suppression taux', error: String(err) });
+    console.error('DELETE /admin/currencies/:id err', err);
+    return res.status(500).json({ success: false, message: 'Erreur suppression devise', error: String(err) });
   }
 });
 

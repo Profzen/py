@@ -163,12 +163,12 @@
       <div style="display:flex;align-items:center;gap:12px">
         <div>
           <div class="brand">PY Crypto — Admin</div>
-          <div class="meta">Gérer news • taux • transactions • paiements</div>
+          <div class="meta">Gérer news • devises • transactions • paiements</div>
         </div>
 
         <!-- Admin top nav -->
         <div class="admin-top-nav" role="navigation" aria-label="Admin navigation">
-          <button class="nav-btn" data-target="rates-section">Taux & devises</button>
+          <button class="nav-btn" data-target="rates-section">Devises</button>
           <button class="nav-btn" data-target="news-section">News</button>
           <button class="nav-btn" data-target="transactions-section">Transactions</button>
         </div>
@@ -230,22 +230,30 @@
       <!-- Right column -->
       <aside>
         <div class="card" id="rates-section">
-          <h3>Taux & devises</h3>
+          <h3>Devises</h3>
           <div class="rates-top">
-            <input id="rates-filter" class="rates-search" placeholder="Rechercher paire (ex: BTC-USD) ou partie (BTC)">
+            <input id="rates-filter" class="rates-search" placeholder="Rechercher devise (ex: BTC ou XOF)">
             <button id="rates-refresh" class="btn ghost">Rafraîchir</button>
           </div>
+
           <div id="rates-list" class="rates-grid tiny" style="margin-top:8px">Chargement...</div>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <input id="r-pair" placeholder="Pair (ex: BTC-USD)" style="padding:8px;border-radius:8px;border:1px solid var(--border);flex:1">
-            <input id="r-value" type="number" placeholder="Valeur" style="padding:8px;border-radius:8px;border:1px solid var(--border);width:120px">
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button id="r-add" class="btn">Ajouter / Modifier</button>
-            <button id="btn-refresh" class="btn ghost">Rafraîchir news+taux+paiements</button>
+
+          <!-- New: currency management (symbol, name, type) -->
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+            <input id="r-symbol" name="symbol" placeholder="Symbole (ex: BTC)" style="padding:8px;border-radius:8px;border:1px solid var(--border);flex:0.8">
+            <input id="r-name" name="name" placeholder="Nom (ex: Bitcoin)" style="padding:8px;border-radius:8px;border:1px solid var(--border);flex:1">
+            <select id="r-type" name="type" style="padding:8px;border-radius:8px;border:1px solid var(--border);width:130px">
+              <option value="crypto">crypto</option>
+              <option value="fiat">fiat</option>
+            </select>
           </div>
 
-          <div style="margin-top:12px" class="tiny muted">Gérer les moyens de paiement ci-dessous</div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="r-add" class="btn">Ajouter / Modifier</button>
+            <button id="btn-refresh" class="btn ghost">Rafraîchir news+devises+paiements</button>
+          </div>
+
+          <div style="margin-top:12px" class="tiny muted">Gérer les devises affichées dans les menus d'échange (symbole, nom, type). Pour gérer des paires/taux automatisés, utilise l'outil de prix.</div>
         </div>
 
         <!-- Payment methods card (just under rates) -->

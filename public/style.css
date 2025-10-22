@@ -30,7 +30,7 @@ body{
   background-image:
     linear-gradient(180deg, rgba(11,118,209,0.025), rgba(31,169,255,0.02)),
     url('/backiv2.jpeg');
-  background-repeat:no-repeat;
+  background-repeat:repeat;
   background-size:cover;
   background-position:center;
   overflow-x:hidden; /* prevent horizontal scroll */

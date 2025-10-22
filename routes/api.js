@@ -1,17 +1,32 @@
 // routes/api.js
 // Routes publiques et API (prices, market_chart, news, transactions, rates/currencies, price)
-// Mis à jour pour utiliser services/priceService.js et le nouveau modèle Rate (qui représente désormais des currencies)
+// Mis à jour pour utiliser services/priceService.js et le modèle Currency / Rate (compatibilité)
 
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 
 const News = require('../models/News');
-const Rate = require('../models/Rate'); // nouveau modèle "currency"
 const Transaction = require('../models/Transaction');
 const User = require('../models/user');
-const PaymentMethod = require('../models/PaymentMethod'); // Assure-toi que ce modèle existe
+
+let CurrencyModel = null;
+// try to prefer models/Currency.js, fallback to models/Rate.js for compatibility
+try {
+  CurrencyModel = require('../models/Currency');
+} catch (e) {
+  try {
+    CurrencyModel = require('../models/Rate');
+  } catch (e2) {
+    CurrencyModel = null;
+  }
+}
+
+const PaymentMethod = (() => {
+  try { return require('../models/PaymentMethod'); } catch(e){ return null; }
+})();
 
 const mailer = require('./mail');
 
@@ -21,7 +36,6 @@ const priceService = createPriceService({ autoInit: true, refreshMs: 30_000, max
 const COINGECKO = process.env.COINGECKO_API || 'https://api.coingecko.com/api/v3';
 
 // --- prices cache (simple) ---
-// conserve la route existante qui appelle CoinGecko (liste restée identique)
 let pricesCache = null, pricesFetched = 0;
 const PRICES_TTL = 30 * 1000;
 
@@ -82,25 +96,30 @@ router.get('/news', async (req, res) => {
 });
 
 // --- rates / currencies ---
-// Note: Rate model now represents a currency (symbol, type, active, displayOrder, meta...)
-// Keep /rates for backward-compat, and add /currencies which is clearer.
+// Keep /rates for backward-compat and provide /currencies as clearer name
 
-// GET /api/rates  (legacy name — retourne la liste des currencies)
+// Helper to fetch currencies (uses CurrencyModel if available)
+async function fetchCurrencies() {
+  if (!CurrencyModel) return [];
+  return CurrencyModel.find().sort({ displayOrder: 1, symbol: 1 }).lean();
+}
+
+// GET /api/rates (legacy)
 router.get('/rates', async (req, res) => {
   try {
-    const rates = await Rate.find().sort({ displayOrder: 1, symbol: 1 }).lean();
-    res.json(rates);
+    const list = await fetchCurrencies();
+    res.json(list);
   } catch (err) {
     console.error('GET /api/rates err', err && (err.message || err));
     res.status(500).json({ error: 'Impossible de récupérer rates' });
   }
 });
 
-// GET /api/currencies  (nomenclature plus explicite)
+// GET /api/currencies (explicit)
 router.get('/currencies', async (req, res) => {
   try {
-    const currencies = await Rate.find().sort({ displayOrder: 1, symbol: 1 }).lean();
-    res.json(currencies);
+    const list = await fetchCurrencies();
+    res.json(list);
   } catch (err) {
     console.error('GET /api/currencies err', err && (err.message || err));
     res.status(500).json({ error: 'Impossible de récupérer currencies' });
@@ -110,6 +129,10 @@ router.get('/currencies', async (req, res) => {
 // --- payments ---
 router.get('/payments', async (req, res) => {
   try {
+    if (!PaymentMethod) {
+      // fallback empty list if model not available
+      return res.json([]);
+    }
     const payments = await PaymentMethod.find().sort({ type: 1, name: 1 });
     res.json(payments);
   } catch (err) {
@@ -138,64 +161,66 @@ async function getUserFromHeader(req) {
 
 /**
  * GET /api/price?pair=USDT-XOF
- * Returns the latest cached/remote price for a pair using services/priceService.js
- * Response:
- * {
- *   pair, coinbasePrice, buyPriceForUs, sellPriceForUs, lastUpdated,
- *   (optional) quote: { amountProvided, amountConverted, note }
- * }
- *
- * Optional query parameters:
- * - amount (number) : interpreted as amount in BASE (crypto) to be converted to QUOTE
- * - operation (string) : 'sell' (client sells crypto -> we buy at buyPriceForUs) OR 'buy' (client buys crypto -> we sell at sellPriceForUs)
- *
- * Example:
- * GET /api/price?pair=USDT-XOF&amount=1&operation=sell
+ * Uses priceService.getPrice(pair)
  */
 router.get('/price', async (req, res) => {
   try {
-    const pair = (req.query.pair || '').toString().trim().toUpperCase();
-    if (!pair) return res.status(400).json({ error: 'Query param pair is required (e.g. USDT-XOF)' });
+    const pairRaw = (req.query.pair || '').toString().trim().toUpperCase();
+    if (!pairRaw) return res.status(400).json({ error: 'Query param pair is required (e.g. USDT-XOF)' });
 
-    // normalize pair to format BASE-QUOTE
-    const normalized = pair.replace(/\s+/g, '').replace(/[_]/g, '-');
+    const normalized = pairRaw.replace(/\s+/g, '').replace(/[_]/g, '-');
 
-    // get price from service (will fetch & cache as necessary)
-    const data = await priceService.getPrice(normalized); // { pair, coinbasePrice, buyPriceForUs, sellPriceForUs, lastUpdated }
+    // get price data (priceService will throw if invalid pair)
+    const data = await priceService.getPrice(normalized);
 
-    // optional conversion if amount provided
+    // optional conversion
     const amountParam = req.query.amount;
-    const operation = (req.query.operation || '').toString().toLowerCase(); // 'sell' or 'buy'
+    const operation = (req.query.operation || '').toString().toLowerCase();
     let quote = null;
+
     if (amountParam !== undefined && amountParam !== null && amountParam !== '') {
       const amount = Number(amountParam);
       if (!Number.isFinite(amount) || amount < 0) {
         return res.status(400).json({ error: 'amount must be a positive number' });
       }
-      // Interpret amount as amount in BASE (crypto). Convert to QUOTE (fiat) using appropriate price:
-      // - operation === 'sell' -> client sells crypto -> we buy, use buyPriceForUs
-      // - operation === 'buy'  -> client buys crypto -> we sell, use sellPriceForUs
-      const priceUsed = (operation === 'sell') ? data.buyPriceForUs : (operation === 'buy') ? data.sellPriceForUs : null;
-      if (priceUsed === null) {
-        // if no operation provided, return both conversions (using buy and sell)
+
+      // choose price depending on operation
+      const priceSell = Number(data.sellPriceForUs || data.coinbasePrice || 0); // client buys crypto (we sell)
+      const priceBuy = Number(data.buyPriceForUs || data.coinbasePrice || 0);   // client sells crypto (we buy)
+
+      // Use high-precision arithmetic via Number but avoid premature rounding; formatting only for output.
+      if (operation === 'sell') {
+        const amountQuote = amount * priceBuy;
+        quote = {
+          amountBase: amount,
+          priceUsed: priceBuy,
+          amountQuote: amountQuote,
+          amountQuoteFormatted: Number(amountQuote).toString()
+        };
+      } else if (operation === 'buy') {
+        const amountQuote = amount * priceSell;
+        quote = {
+          amountBase: amount,
+          priceUsed: priceSell,
+          amountQuote: amountQuote,
+          amountQuoteFormatted: Number(amountQuote).toString()
+        };
+      } else {
+        // return both
+        const amountQuoteUsingBuy = amount * priceBuy;
+        const amountQuoteUsingSell = amount * priceSell;
         quote = {
           amountBase: amount,
           usingBuyPriceForUs: {
-            price: data.buyPriceForUs,
-            amountQuote: Number((amount * data.buyPriceForUs).toFixed(6))
+            price: priceBuy,
+            amountQuote: amountQuoteUsingBuy,
+            amountQuoteFormatted: Number(amountQuoteUsingBuy).toString()
           },
           usingSellPriceForUs: {
-            price: data.sellPriceForUs,
-            amountQuote: Number((amount * data.sellPriceForUs).toFixed(6))
-          },
-          note: 'amount interpreted as BASE (crypto). Use operation=sell (client sells) or operation=buy (client buys) to get single conversion.'
-        };
-      } else {
-        quote = {
-          amountBase: amount,
-          priceUsed,
-          amountQuote: Number((amount * priceUsed).toFixed(6)),
-          note: `Converted amount in QUOTE currency using ${operation === 'sell' ? 'buyPriceForUs (we buy from client)' : 'sellPriceForUs (we sell to client)'}`
+            price: priceSell,
+            amountQuote: amountQuoteUsingSell,
+            amountQuoteFormatted: Number(amountQuoteUsingSell).toString()
+          }
         };
       }
     }
@@ -209,44 +234,38 @@ router.get('/price', async (req, res) => {
       ...(quote ? { quote } : {})
     };
 
-    res.json(resp);
+    return res.json(resp);
   } catch (err) {
     console.error('GET /api/price err', err && (err.message || err));
-    res.status(500).json({ error: 'Impossible de récupérer le prix pour cette paire', details: String(err) });
+    return res.status(500).json({ error: 'Impossible de récupérer le prix pour cette paire', details: String(err) });
   }
 });
 
 /**
  * POST /api/transactions
- * - Accepte transactions même sans token (guest).
- * - Peut recevoir un objet `proof` (body.proof) => sera stocké dans details.proof
- * - Forcer status: 'pending'
- * - Structure attendue dans body: { from, to, amountFrom, amountTo, type, details, proof }
+ * Accept guest transactions; store proof URL/object if provided inside details.proof
  */
 router.post('/transactions', async (req, res) => {
   try {
     const { from, to, amountFrom, amountTo, type, details: rawDetails, proof } = req.body || {};
 
-    // basic validation
     if (!from || !to || typeof amountFrom === 'undefined' || typeof amountTo === 'undefined') {
       return res.status(400).json({ success: false, message: 'Champs requis: from, to, amountFrom, amountTo' });
     }
 
-    const user = await getUserFromHeader(req); // may be null -> guest allowed
+    const user = await getUserFromHeader(req);
 
-    // normalize details: ensure it's an object
     let details = {};
     if (rawDetails && typeof rawDetails === 'object') details = { ...rawDetails };
-    // If a separate proof object provided in body, attach it under details.proof
+
     if (proof && typeof proof === 'object') {
-      // keep only url, public_id, mimeType if present
       const p = {};
       if (proof.url) p.url = proof.url;
       if (proof.public_id) p.public_id = proof.public_id;
       if (proof.mimeType) p.mimeType = proof.mimeType;
+      if (proof.filename) p.filename = proof.filename;
       if (Object.keys(p).length > 0) details.proof = p;
-    } else if (details.proof && typeof details.proof === 'string') {
-      // if client sent details.proof as a string (url), convert to object
+    } else if (details && typeof details.proof === 'string') {
       details.proof = { url: details.proof };
     }
 
@@ -257,21 +276,18 @@ router.post('/transactions', async (req, res) => {
       amountFrom: Number(amountFrom),
       amountTo: Number(amountTo),
       details: details || {},
-      status: 'pending',      // force pending by default
+      status: 'pending',
       createdAt: new Date()
     });
 
-    // emit newTransaction via socket.io (admins can listen)
     try { global.io && global.io.emit('newTransaction', txDoc); } catch (e) { console.warn('socket emit failed', e); }
 
-    // determine client email (either from logged user or details.email)
     let clientEmail = null;
     if (user && user.email) clientEmail = user.email;
     else if (details && typeof details === 'object') {
       clientEmail = details.email || details.emailAddress || details.mail || null;
     }
 
-    // send emails (best-effort)
     try {
       mailer.sendTransactionCreated(txDoc, clientEmail).catch(err => {
         console.warn('mailer.sendTransactionCreated failed', err && err.message ? err.message : err);
@@ -280,17 +296,16 @@ router.post('/transactions', async (req, res) => {
       console.warn('sendTransactionCreated threw', mailErr && mailErr.message ? mailErr.message : mailErr);
     }
 
-    res.json({ success: true, message: 'Transaction créée', transaction: txDoc });
+    return res.json({ success: true, message: 'Transaction créée', transaction: txDoc });
   } catch (err) {
     console.error('create tx err', err && (err.message || err));
-    res.status(500).json({ success: false, message: 'Impossible de créer la transaction', error: String(err) });
+    return res.status(500).json({ success: false, message: 'Impossible de créer la transaction', error: String(err) });
   }
 });
 
 /**
  * GET /api/transactions
- * - ?mine=1 -> return user's transactions if token present (else [] for guests)
- * - otherwise -> public listing (admin should use /admin/transactions)
+ * ?mine=1 -> user's transactions (token required)
  */
 router.get('/transactions', async (req, res) => {
   try {
@@ -301,17 +316,15 @@ router.get('/transactions', async (req, res) => {
       if (user) {
         txs = await Transaction.find({ user: user._id }).sort({ createdAt: -1 });
       } else {
-        // guest: frontend uses localStorage; keep empty to indicate none on server
         txs = [];
       }
     } else {
-      // public listing (not paginated here) - admin UI should prefer /admin/transactions
       txs = await Transaction.find().populate('user').sort({ createdAt: -1 }).limit(1000);
     }
-    res.json(txs);
+    return res.json(txs);
   } catch (err) {
     console.error('GET /api/transactions err', err);
-    res.status(500).json({ error: 'Impossible de récupérer les transactions' });
+    return res.status(500).json({ error: 'Impossible de récupérer les transactions' });
   }
 });
 
